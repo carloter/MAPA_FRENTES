@@ -1,0 +1,74 @@
+# MAPA_FRENTES - Configuracion
+# Herramienta para generar mapas de frentes meteorologicos
+
+area:
+  lon_min: -60.0
+  lon_max: 30.0
+  lat_min: 25.0
+  lat_max: 65.0
+  data_padding_deg: 10.0   # Grados extra para descarga de datos (cubre esquinas Lambert)
+
+isobars:
+  interval_hpa: 4
+  smooth_sigma: 2.0
+  linewidth: 0.6
+  color: "#333333"
+  label_fontsize: 7
+
+pressure_centers:
+  filter_size: 10          # puntos de ventana para min/max filter
+  min_distance_deg: 2.0    # distancia minima entre centros
+  h_color: "#0044CC"
+  l_color: "#CC0000"
+  fontsize: 8
+  fontweight: "bold"
+
+tfp:
+  smooth_sigma: 6.0            # suavizado gaussiano de theta_w (puntos de grid)
+  gradient_threshold: 5.0e-6   # K/m - umbral minimo (adaptativo si > p90)
+  min_front_points: 6          # puntos minimos para considerar un frente
+  dbscan_eps_deg: 1.5          # eps para DBSCAN en grados
+  dbscan_min_samples: 3        # min_samples para DBSCAN
+  simplify_tolerance_deg: 0.12 # tolerancia Douglas-Peucker en grados
+  use_mslp_filter: true        # filtrar frentes por Laplaciana MSLP (solo ciclonicos)
+  mslp_laplacian_sigma: 8.0    # suavizado MSLP antes de calcular Laplaciana
+
+plotting:
+  figsize: [18, 11]
+  dpi: 150
+  projection: "LambertConformal"
+  projection_params:
+    central_longitude: -15.0
+    central_latitude: 45.0
+    standard_parallels: [30.0, 60.0]
+  coastline_color: "#555555"
+  coastline_linewidth: 0.6
+  border_color: "#AAAAAA"
+  border_linewidth: 0.3
+  ocean_color: "#D6EAF8"
+  land_color: "#F5F0E8"
+  front_linewidth: 2.5
+
+export:
+  default_format: "png"
+  png_dpi: 300
+  pdf_dpi: 150
+
+data:
+  cache_dir: "data/cache"
+  output_dir: "data/output"
+  sessions_dir: "data/sessions"
+
+ecmwf:
+  source: "aws"
+  model: "ifs"
+  resol: "0p25"
+  step: 0
+  surface_params:
+    - "msl"
+  pressure_level: 850
+  pressure_params:
+    - "t"
+    - "q"
+    - "u"
+    - "v"

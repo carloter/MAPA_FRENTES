@@ -1,0 +1,16 @@
+data/cache/*.grib2
+data/cache/*.grib
+data/cache/*.idx
+data/output/*.png
+data/output/*.pdf
+data/sessions/*.geojson
+__pycache__/
+*.pyc
+*.pyo
+.env
+*.egg-info/
+dist/
+build/
+.claude/
+nul
+Thumbs.db
