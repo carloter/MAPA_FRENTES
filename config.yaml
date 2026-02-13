@@ -16,22 +16,36 @@ isobars:
   label_fontsize: 7
 
 pressure_centers:
-  filter_size: 10          # puntos de ventana para min/max filter
-  min_distance_deg: 2.0    # distancia minima entre centros
+  filter_size: 30            # puntos de ventana para min/max filter (~7.5deg a 0.25deg)
+  min_distance_deg: 5.0      # distancia minima entre centros del mismo tipo
+  secondary_radius_deg: 15.0 # radio para clasificar primario/secundario
   h_color: "#0044CC"
   l_color: "#CC0000"
-  fontsize: 8
+  fontsize: 14
   fontweight: "bold"
+  high_label: "A"            # etiqueta para anticiclon (estilo AEMET)
+  low_label: "B"             # etiqueta para borrasca (estilo AEMET)
 
 tfp:
-  smooth_sigma: 6.0            # suavizado gaussiano de theta_w (puntos de grid)
-  gradient_threshold: 5.0e-6   # K/m - umbral minimo (adaptativo si > p90)
-  min_front_points: 6          # puntos minimos para considerar un frente
-  dbscan_eps_deg: 1.5          # eps para DBSCAN en grados
+  smooth_sigma: 5.0            # suavizado gaussiano de theta_w (puntos de grid)
+  gradient_threshold: 4.0e-6   # K/m - umbral minimo (adaptativo si > p90)
+  min_front_points: 8          # puntos minimos para considerar un frente
+  dbscan_eps_deg: 1.8          # eps para DBSCAN en grados - menos fragmentacion
   dbscan_min_samples: 3        # min_samples para DBSCAN
-  simplify_tolerance_deg: 0.12 # tolerancia Douglas-Peucker en grados
+  simplify_tolerance_deg: 0.10 # tolerancia Douglas-Peucker en grados - curvas mas finas
   use_mslp_filter: true        # filtrar frentes por Laplaciana MSLP (solo ciclonicos)
   mslp_laplacian_sigma: 8.0    # suavizado MSLP antes de calcular Laplaciana
+  # Connector parameters
+  min_front_length_deg: 5.0    # longitud minima de frente en grados (~500 km)
+  max_hop_deg: 3.0             # distancia maxima de salto entre puntos consecutivos
+  angular_weight: 0.55         # peso penalizacion angular (0=distancia, 1=angular)
+  spline_smoothing: 0.6        # factor de suavizado spline (menor = mas fiel a datos)
+  merge_distance_deg: 3.0      # distancia maxima para fusionar segmentos cercanos
+  # Frontogenesis filter
+  use_frontogenesis_filter: true   # filtrar puntos por frontogenesis positiva
+  frontogenesis_threshold: 0.0     # umbral minimo de frontogenesis (K/m/s)
+  # Max fronts
+  max_fronts: 15                   # numero maximo de frentes (los mas largos)
 
 plotting:
   figsize: [18, 11]
@@ -47,7 +61,21 @@ plotting:
   border_linewidth: 0.3
   ocean_color: "#D6EAF8"
   land_color: "#F5F0E8"
-  front_linewidth: 2.5
+  front_linewidth: 1.8
+  front_symbol_size: 5.0     # tamano de simbolos WMO en frentes
+  front_symbol_spacing: 12.0 # espaciado entre simbolos WMO
+
+temporal:
+  enabled: false
+  context_steps: [-6, -3, 0, 3, 6]   # offsets de step respecto al central
+  match_distance_deg: 3.0             # distancia maxima para emparejar frentes entre timesteps
+  min_persistence: 2                  # numero minimo de timesteps adicionales con correspondencia
+
+instability_lines:
+  enabled: true
+  smooth_sigma: 4.0
+  convergence_threshold: 2.0e-5
+  min_length_deg: 2.0
 
 export:
   default_format: "png"

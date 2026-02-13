@@ -18,6 +18,7 @@ import numpy as np
 import xarray as xr
 from metpy.calc import (
     dewpoint_from_specific_humidity,
+    frontogenesis,
     wet_bulb_potential_temperature,
 )
 from metpy.units import units
@@ -203,6 +204,55 @@ def _mslp_cyclonic_filter(
     return front_lats[mask], front_lons[mask]
 
 
+def _frontogenesis_filter(
+    front_lats: np.ndarray,
+    front_lons: np.ndarray,
+    ds: xr.Dataset,
+    lats: np.ndarray,
+    lons: np.ndarray,
+    theta_w: np.ndarray,
+    threshold: float = 0.0,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Filtra puntos de frente por frontogenesis positiva.
+
+    Calcula la funcion de frontogenesis de Petterssen usando MetPy.
+    Rechaza puntos donde frontogenesis <= threshold (zona frontolitica,
+    donde el gradiente se debilita). Esto elimina fragmentos espurios
+    en zonas donde no hay actividad frontal real.
+    """
+    u850 = _ensure_2d(ds["u850"].values)
+    v850 = _ensure_2d(ds["v850"].values)
+
+    # Calcular espaciado del grid
+    dlat = abs(float(np.diff(lats[:2])))
+    dlon = abs(float(np.diff(lons[:2])))
+    dx = dlon * units.degrees_E
+    dy = dlat * units.degrees_N
+
+    # MetPy frontogenesis: F = d|grad(theta)|/dt
+    theta_w_q = theta_w * units.kelvin
+    u_q = u850 * units("m/s")
+    v_q = v850 * units("m/s")
+
+    try:
+        fronto = frontogenesis(theta_w_q, u_q, v_q, dx=dx, dy=dy)
+        fronto_values = _ensure_2d(fronto.magnitude)
+    except Exception as e:
+        logger.warning("Error calculando frontogenesis: %s. Saltando filtro.", e)
+        return front_lats, front_lons
+
+    # Interpolar frontogenesis en los puntos de frente
+    interp = RegularGridInterpolator(
+        (lats, lons), fronto_values, bounds_error=False, fill_value=0
+    )
+    points = np.column_stack([front_lats, front_lons])
+    fronto_at_fronts = interp(points)
+
+    # Mantener solo puntos con frontogenesis positiva (gradiente reforzandose)
+    mask = fronto_at_fronts > threshold
+    return front_lats[mask], front_lons[mask]
+
+
 def compute_tfp_fronts(ds: xr.Dataset, cfg: AppConfig) -> FrontCollection:
     """Pipeline completo TFP."""
     tfp_cfg = cfg.tfp
@@ -268,11 +318,23 @@ def compute_tfp_fronts(ds: xr.Dataset, cfg: AppConfig) -> FrontCollection:
             n_before, len(front_lats), n_before - len(front_lats),
         )
 
+    # 5. Filtro frontogenesis: descartar puntos frontoliticos
+    if tfp_cfg.use_frontogenesis_filter and len(front_lats) > 0:
+        n_before = len(front_lats)
+        front_lats, front_lons = _frontogenesis_filter(
+            front_lats, front_lons, ds, lats, lons, theta_w,
+            threshold=tfp_cfg.frontogenesis_threshold,
+        )
+        logger.info(
+            "Filtro frontogenesis: %d -> %d puntos (eliminados %d frontoliticos)",
+            n_before, len(front_lats), n_before - len(front_lats),
+        )
+
     if len(front_lats) == 0:
         logger.warning("No se encontraron puntos de frente.")
         return FrontCollection()
 
-    # 5. Clustering y conexion
+    # 7. Clustering y conexion
     logger.info("Conectando puntos en polilineas...")
     polylines = cluster_and_connect(
         front_lats, front_lons,
@@ -280,9 +342,15 @@ def compute_tfp_fronts(ds: xr.Dataset, cfg: AppConfig) -> FrontCollection:
         min_samples=tfp_cfg.dbscan_min_samples,
         min_points=tfp_cfg.min_front_points,
         simplify_tol=tfp_cfg.simplify_tolerance_deg,
+        min_front_length_deg=tfp_cfg.min_front_length_deg,
+        max_hop_deg=tfp_cfg.max_hop_deg,
+        angular_weight=tfp_cfg.angular_weight,
+        spline_smoothing=tfp_cfg.spline_smoothing,
+        merge_distance_deg=tfp_cfg.merge_distance_deg,
+        max_fronts=tfp_cfg.max_fronts,
     )
 
-    # 6. Crear FrontCollection
+    # 8. Crear FrontCollection
     collection = FrontCollection()
     for coord_name in ("time", "valid_time"):
         if coord_name in ds.coords:

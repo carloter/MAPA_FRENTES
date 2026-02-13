@@ -13,6 +13,7 @@ class FrontType(Enum):
     WARM = "warm"
     OCCLUDED = "occluded"
     STATIONARY = "stationary"
+    INSTABILITY_LINE = "instability_line"
 
 
 @dataclass
@@ -29,6 +30,7 @@ class Front:
     lats: np.ndarray
     lons: np.ndarray
     id: str = ""
+    flip_symbols: bool = False
 
     def __post_init__(self):
         self.lats = np.asarray(self.lats, dtype=float)

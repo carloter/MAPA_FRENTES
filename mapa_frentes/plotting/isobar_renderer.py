@@ -1,4 +1,4 @@
-"""Renderizado de isobaras y etiquetas H/L en el mapa."""
+"""Renderizado de isobaras y etiquetas A/B en el mapa."""
 
 import numpy as np
 import cartopy.crs as ccrs
@@ -58,10 +58,11 @@ def draw_pressure_labels(
     centers: list[PressureCenter],
     cfg: AppConfig,
 ):
-    """Dibuja las etiquetas H/L con halo blanco, estilo AEMET.
+    """Dibuja etiquetas de centros de presion estilo AEMET.
 
-    Las letras H/L son grandes y destacadas. El valor de presion
-    aparece debajo en un recuadro blanco semitransparente.
+    - Primarios: B/A mayuscula, tamano grande
+    - Secundarios: b/a minuscula, tamano menor
+    - Si tiene nombre (borrasca nombrada): se muestra junto a la etiqueta
     Solo se dibujan centros dentro del area de visualizacion.
     """
     pc_cfg = cfg.pressure_centers
@@ -72,14 +73,23 @@ def draw_pressure_labels(
         if (center.lon < area.lon_min or center.lon > area.lon_max
                 or center.lat < area.lat_min or center.lat > area.lat_max):
             continue
-        color = pc_cfg.h_color if center.type == "H" else pc_cfg.l_color
 
-        # Letra H/L grande con halo blanco
+        color = pc_cfg.h_color if center.type == "H" else pc_cfg.l_color
+        base_label = pc_cfg.high_label if center.type == "H" else pc_cfg.low_label
+
+        if center.primary:
+            label = base_label.upper()
+            fontsize = pc_cfg.fontsize + 2
+        else:
+            label = base_label.lower()
+            fontsize = pc_cfg.fontsize - 2
+
+        # Letra A/B (o a/b) con halo blanco
         ax.text(
             center.lon, center.lat,
-            center.type,
+            label,
             transform=ccrs.PlateCarree(),
-            fontsize=pc_cfg.fontsize + 2,
+            fontsize=fontsize,
             fontweight=pc_cfg.fontweight,
             color=color,
             ha="center",
@@ -92,12 +102,29 @@ def draw_pressure_labels(
                 alpha=0.8,
             ),
         )
+
+        # Nombre de la borrasca (si tiene)
+        if center.name:
+            ax.text(
+                center.lon + 1.0, center.lat,
+                center.name,
+                transform=ccrs.PlateCarree(),
+                fontsize=pc_cfg.fontsize - 2,
+                fontweight="bold",
+                fontstyle="italic",
+                color="black",
+                ha="left",
+                va="center",
+                zorder=7,
+            )
+
         # Valor de presion debajo
+        value_fontsize = pc_cfg.fontsize - 3 if center.primary else pc_cfg.fontsize - 5
         ax.text(
             center.lon, center.lat - 1.4,
             f"{center.value:.0f}",
             transform=ccrs.PlateCarree(),
-            fontsize=pc_cfg.fontsize - 3,
+            fontsize=value_fontsize,
             fontweight="bold",
             color=color,
             ha="center",

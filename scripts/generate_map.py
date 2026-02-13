@@ -48,6 +48,10 @@ def main():
         help="No descargar datos ni comprobar cache, usar ficheros existentes",
     )
     parser.add_argument(
+        "--temporal", action="store_true",
+        help="Usar secuencia temporal para filtrado y clasificacion de frentes",
+    )
+    parser.add_argument(
         "--force", action="store_true",
         help="Forzar descarga aunque exista cache reciente",
     )
@@ -135,14 +139,29 @@ def main():
     # Frentes automaticos
     if args.fronts:
         try:
-            from mapa_frentes.fronts.tfp import compute_tfp_fronts
-            from mapa_frentes.fronts.classifier import classify_fronts
             from mapa_frentes.plotting.front_renderer import draw_fronts, draw_front_legend
 
-            fronts = compute_tfp_fronts(ds, cfg)
-            fronts = classify_fronts(fronts, ds, cfg)
+            if args.temporal:
+                from mapa_frentes.fronts.temporal import compute_temporal_fronts
+                fronts = compute_temporal_fronts(
+                    cfg, date=date, base_step=step_val,
+                    no_download=args.no_download,
+                )
+            else:
+                from mapa_frentes.fronts.tfp import compute_tfp_fronts
+                from mapa_frentes.fronts.classifier import classify_fronts
+                from mapa_frentes.fronts.instability import detect_instability_lines
+
+                fronts = compute_tfp_fronts(ds, cfg)
+                fronts = classify_fronts(fronts, ds, cfg)
+
+                # Lineas de inestabilidad
+                instab_lines = detect_instability_lines(ds, cfg)
+                for il in instab_lines:
+                    fronts.add(il)
+
             draw_fronts(ax, fronts, cfg)
-            draw_front_legend(ax)
+            draw_front_legend(ax, cfg)
             logger.info("Frentes dibujados: %d", len(fronts.fronts))
         except Exception as e:
             logger.error("Error al detectar/dibujar frentes: %s", e)

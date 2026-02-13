@@ -1,6 +1,11 @@
-"""Deteccion de centros de alta (H) y baja (L) presion."""
+"""Deteccion de centros de alta (H) y baja (L) presion.
 
-from dataclasses import dataclass
+Incluye clasificacion primario/secundario estilo AEMET:
+- Primario (B/A): centros profundos, aislados
+- Secundario (b/a): centros menos profundos cerca de un primario
+"""
+
+from dataclasses import dataclass, field
 
 import numpy as np
 from scipy.ndimage import maximum_filter, minimum_filter
@@ -15,6 +20,8 @@ class PressureCenter:
     lat: float
     lon: float
     value: float       # presion en hPa
+    primary: bool = True   # True = primario (B/A), False = secundario (b/a)
+    name: str = ""         # nombre de borrasca (ej: "Nils"), vacio = sin nombre
 
 
 def detect_pressure_centers(
@@ -23,19 +30,12 @@ def detect_pressure_centers(
     lons: np.ndarray,
     cfg: AppConfig,
 ) -> list[PressureCenter]:
-    """Detecta centros de alta y baja presion.
+    """Detecta centros de alta y baja presion con jerarquia primario/secundario.
 
-    Usa minimum_filter y maximum_filter de scipy para encontrar
-    extremos locales en el campo de MSLP suavizado.
-
-    Args:
-        msl_smooth: Array 2D de MSLP suavizada en hPa.
-        lats: Array 1D de latitudes.
-        lons: Array 1D de longitudes.
-        cfg: Configuracion.
-
-    Returns:
-        Lista de PressureCenter.
+    Pipeline:
+    1. Detectar extremos locales con min/max filter
+    2. Filtrar por distancia minima (greedy, mas extremo primero)
+    3. Clasificar primario vs secundario
     """
     pc_cfg = cfg.pressure_centers
     size = pc_cfg.filter_size
@@ -52,6 +52,9 @@ def detect_pressure_centers(
     local_max = maximum_filter(msl_smooth, size=size)
     max_mask = (msl_smooth == local_max)
     _add_centers(centers, "H", max_mask, msl_smooth, lats, lons, min_dist)
+
+    # Clasificar primario/secundario
+    _classify_primary_secondary(centers, pc_cfg.secondary_radius_deg)
 
     return centers
 
@@ -89,3 +92,35 @@ def _add_centers(
                     break
         if not too_close:
             centers.append(PressureCenter(type=ctype, lat=lat, lon=lon, value=val))
+
+
+def _classify_primary_secondary(
+    centers: list[PressureCenter],
+    secondary_radius_deg: float,
+):
+    """Clasifica centros como primarios o secundarios.
+
+    Para cada tipo (H/L), el centro mas extremo es siempre primario.
+    Los siguientes son primarios si no hay otro primario dentro del
+    radio de influencia. Si hay un primario cerca, es secundario.
+    """
+    for ctype in ("L", "H"):
+        type_centers = [c for c in centers if c.type == ctype]
+        if not type_centers:
+            continue
+
+        # Ya estan ordenados por intensidad (mas extremo primero)
+        # El primero siempre es primario
+        primaries = []
+        for center in type_centers:
+            near_primary = False
+            for p in primaries:
+                dist = np.sqrt((center.lat - p.lat)**2 + (center.lon - p.lon)**2)
+                if dist < secondary_radius_deg:
+                    near_primary = True
+                    break
+            if near_primary:
+                center.primary = False
+            else:
+                center.primary = True
+                primaries.append(center)

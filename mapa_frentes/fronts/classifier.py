@@ -39,7 +39,7 @@ def classify_fronts(
     if not collection.fronts:
         return collection
 
-    from mapa_frentes.fronts.tfp import _remove_time_dim, _ensure_2d
+    from mapa_frentes.fronts.tfp import _remove_time_dim, _ensure_2d, compute_theta_w
     ds = _remove_time_dim(ds)
 
     lat_name = "latitude" if "latitude" in ds.coords else "lat"
@@ -47,10 +47,10 @@ def classify_fronts(
     lats = ds[lat_name].values
     lons = ds[lon_name].values
 
-    # Campo termico suavizado (t850 como proxy de theta_w)
-    t_field = _ensure_2d(ds["t850"].values)
-    t_field = smooth_field(t_field, sigma=cfg.tfp.smooth_sigma)
-    gx, gy = spherical_gradient(t_field, lats, lons)
+    # Campo termico: theta_w suavizado (coherente con la deteccion TFP)
+    theta_w = compute_theta_w(ds)
+    theta_w = smooth_field(theta_w, sigma=cfg.tfp.smooth_sigma)
+    gx, gy = spherical_gradient(theta_w, lats, lons)
 
     u850 = _ensure_2d(ds["u850"].values)
     v850 = _ensure_2d(ds["v850"].values)

@@ -46,22 +46,36 @@ class IsobarConfig:
 class PressureCentersConfig:
     filter_size: int = 30
     min_distance_deg: float = 5.0
+    secondary_radius_deg: float = 15.0
     h_color: str = "blue"
     l_color: str = "red"
     fontsize: int = 14
     fontweight: str = "bold"
+    high_label: str = "A"
+    low_label: str = "B"
 
 
 @dataclass
 class TFPConfig:
-    smooth_sigma: float = 6.0
-    gradient_threshold: float = 5.0e-6
-    min_front_points: int = 6
-    dbscan_eps_deg: float = 1.5
+    smooth_sigma: float = 5.0
+    gradient_threshold: float = 4.0e-6
+    min_front_points: int = 8
+    dbscan_eps_deg: float = 1.8
     dbscan_min_samples: int = 3
-    simplify_tolerance_deg: float = 0.12
+    simplify_tolerance_deg: float = 0.10
     use_mslp_filter: bool = True
     mslp_laplacian_sigma: float = 8.0
+    # Connector parameters (previously hardcoded)
+    min_front_length_deg: float = 5.0
+    max_hop_deg: float = 3.0
+    angular_weight: float = 0.55
+    spline_smoothing: float = 0.6
+    merge_distance_deg: float = 3.0
+    # Frontogenesis filter
+    use_frontogenesis_filter: bool = True
+    frontogenesis_threshold: float = 0.0
+    # Max fronts
+    max_fronts: int = 15
 
 
 @dataclass
@@ -80,7 +94,25 @@ class PlottingConfig:
     border_linewidth: float = 0.3
     ocean_color: str = "lightskyblue"
     land_color: str = "antiquewhite"
-    front_linewidth: float = 3.0
+    front_linewidth: float = 1.8
+    front_symbol_size: float = 5.0
+    front_symbol_spacing: float = 12.0
+
+
+@dataclass
+class InstabilityLinesConfig:
+    enabled: bool = True
+    smooth_sigma: float = 4.0
+    convergence_threshold: float = 2.0e-5
+    min_length_deg: float = 2.0
+
+
+@dataclass
+class TemporalConfig:
+    enabled: bool = False
+    context_steps: List[int] = field(default_factory=lambda: [-6, -3, 0, 3, 6])
+    match_distance_deg: float = 3.0
+    min_persistence: int = 2
 
 
 @dataclass
@@ -114,6 +146,8 @@ class AppConfig:
     isobars: IsobarConfig = field(default_factory=IsobarConfig)
     pressure_centers: PressureCentersConfig = field(default_factory=PressureCentersConfig)
     tfp: TFPConfig = field(default_factory=TFPConfig)
+    instability_lines: InstabilityLinesConfig = field(default_factory=InstabilityLinesConfig)
+    temporal: TemporalConfig = field(default_factory=TemporalConfig)
     plotting: PlottingConfig = field(default_factory=PlottingConfig)
     export: ExportConfig = field(default_factory=ExportConfig)
     data: DataConfig = field(default_factory=DataConfig)
@@ -138,6 +172,8 @@ def load_config(config_path: str | Path | None = None) -> AppConfig:
         isobars=IsobarConfig(**raw.get("isobars", {})),
         pressure_centers=PressureCentersConfig(**raw.get("pressure_centers", {})),
         tfp=TFPConfig(**raw.get("tfp", {})),
+        instability_lines=InstabilityLinesConfig(**raw.get("instability_lines", {})),
+        temporal=TemporalConfig(**raw.get("temporal", {})),
         plotting=PlottingConfig(**raw.get("plotting", {})),
         export=ExportConfig(**raw.get("export", {})),
         data=DataConfig(**raw.get("data", {})),

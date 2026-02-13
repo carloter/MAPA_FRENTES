@@ -155,6 +155,7 @@ class FrontEditor:
                     FrontType.WARM: "Calido",
                     FrontType.OCCLUDED: "Ocluido",
                     FrontType.STATIONARY: "Estacionario",
+                    FrontType.INSTABILITY_LINE: "Linea inestabilidad",
                 }
                 self.mw.type_combo.blockSignals(True)
                 self.mw.type_combo.setCurrentText(
