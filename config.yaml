@@ -16,9 +16,9 @@ isobars:
   label_fontsize: 7
 
 pressure_centers:
-  filter_size: 30            # puntos de ventana para min/max filter (~7.5deg a 0.25deg)
-  min_distance_deg: 5.0      # distancia minima entre centros del mismo tipo
-  secondary_radius_deg: 15.0 # radio para clasificar primario/secundario
+  filter_size: 20            # puntos de ventana para min/max filter (~5deg a 0.25deg)
+  min_distance_deg: 3.5      # distancia minima entre centros del mismo tipo
+  secondary_radius_deg: 10.0 # radio para clasificar primario/secundario
   h_color: "#0044CC"
   l_color: "#CC0000"
   fontsize: 14
@@ -36,14 +36,14 @@ tfp:
   use_mslp_filter: true        # filtrar frentes por Laplaciana MSLP (solo ciclonicos)
   mslp_laplacian_sigma: 8.0    # suavizado MSLP antes de calcular Laplaciana
   # Connector parameters
-  min_front_length_deg: 5.0    # longitud minima de frente en grados (~500 km)
+  min_front_length_deg: 3.0    # longitud minima de frente en grados (~300 km)
   max_hop_deg: 3.0             # distancia maxima de salto entre puntos consecutivos
   angular_weight: 0.55         # peso penalizacion angular (0=distancia, 1=angular)
   spline_smoothing: 0.6        # factor de suavizado spline (menor = mas fiel a datos)
   merge_distance_deg: 3.0      # distancia maxima para fusionar segmentos cercanos
   # Frontogenesis filter
   use_frontogenesis_filter: true   # filtrar puntos por frontogenesis positiva
-  frontogenesis_threshold: 0.0     # umbral minimo de frontogenesis (K/m/s)
+  frontogenesis_percentile: 25     # percentil de frontogenesis por debajo del cual se descarta
   # Max fronts
   max_fronts: 15                   # numero maximo de frentes (los mas largos)
 
@@ -64,6 +64,15 @@ plotting:
   front_linewidth: 1.8
   front_symbol_size: 5.0     # tamano de simbolos WMO en frentes
   front_symbol_spacing: 12.0 # espaciado entre simbolos WMO
+
+center_fronts:
+  search_radius_deg: 5.0         # radio para muestreo azimutal alrededor del centro
+  trace_step_deg: 0.5            # paso de avance en ray-marching (grados)
+  max_front_length_deg: 15.0     # longitud maxima del frente desde el centro
+  max_turn_deg: 30.0             # giro maximo permitido por paso
+  gradient_cutoff_factor: 0.3    # parar cuando gradiente < factor * pico
+  spline_smoothing: 0.4          # suavizado spline para frentes generados
+  max_association_distance_deg: 10.0  # distancia maxima para asociar frente TFP a centro L
 
 temporal:
   enabled: false

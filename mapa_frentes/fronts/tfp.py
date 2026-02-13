@@ -211,23 +211,24 @@ def _frontogenesis_filter(
     lats: np.ndarray,
     lons: np.ndarray,
     theta_w: np.ndarray,
-    threshold: float = 0.0,
+    percentile: int = 25,
 ) -> tuple[np.ndarray, np.ndarray]:
-    """Filtra puntos de frente por frontogenesis positiva.
+    """Filtra puntos de frente por frontogenesis.
 
     Calcula la funcion de frontogenesis de Petterssen usando MetPy.
-    Rechaza puntos donde frontogenesis <= threshold (zona frontolitica,
-    donde el gradiente se debilita). Esto elimina fragmentos espurios
-    en zonas donde no hay actividad frontal real.
+    Descarta el percentil inferior de puntos (los mas frontoliticos).
+    Esto elimina fragmentos espurios en zonas donde el gradiente termico
+    se esta debilitando activamente.
     """
     u850 = _ensure_2d(ds["u850"].values)
     v850 = _ensure_2d(ds["v850"].values)
 
-    # Calcular espaciado del grid
-    dlat = abs(float(np.diff(lats[:2])))
-    dlon = abs(float(np.diff(lons[:2])))
-    dx = dlon * units.degrees_E
-    dy = dlat * units.degrees_N
+    # Calcular espaciado del grid en metros
+    dlat = abs(np.diff(lats[:2]).item())
+    dlon = abs(np.diff(lons[:2]).item())
+    mean_lat = np.mean(lats)
+    dy = dlat * np.pi / 180.0 * 6.371e6 * units.meter
+    dx = dlon * np.pi / 180.0 * 6.371e6 * np.cos(np.radians(mean_lat)) * units.meter
 
     # MetPy frontogenesis: F = d|grad(theta)|/dt
     theta_w_q = theta_w * units.kelvin
@@ -243,13 +244,18 @@ def _frontogenesis_filter(
 
     # Interpolar frontogenesis en los puntos de frente
     interp = RegularGridInterpolator(
-        (lats, lons), fronto_values, bounds_error=False, fill_value=0
+        (lats, lons), fronto_values, bounds_error=False, fill_value=0,
     )
     points = np.column_stack([front_lats, front_lons])
     fronto_at_fronts = interp(points)
 
-    # Mantener solo puntos con frontogenesis positiva (gradiente reforzandose)
-    mask = fronto_at_fronts > threshold
+    # Descartar el percentil inferior (puntos mas frontoliticos)
+    threshold = np.percentile(fronto_at_fronts, percentile)
+    mask = fronto_at_fronts >= threshold
+    logger.debug(
+        "Frontogenesis: p%d=%.2e, descartando %d de %d puntos",
+        percentile, threshold, np.sum(~mask), len(mask),
+    )
     return front_lats[mask], front_lons[mask]
 
 

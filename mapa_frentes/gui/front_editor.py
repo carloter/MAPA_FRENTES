@@ -111,6 +111,8 @@ class FrontEditor:
             self._handle_add_point(event, lon, lat)
         elif self.mode == "delete":
             self._handle_delete(event, lon, lat)
+        elif self.mode == "generate":
+            self._handle_generate(event, lon, lat)
 
     def _on_release(self, event):
         if self._dragging:
@@ -318,6 +320,85 @@ class FrontEditor:
                 transform=ccrs.PlateCarree(), zorder=10,
             )
         self.canvas.draw_idle()
+
+    def _handle_generate(self, event, lon, lat):
+        """Genera frentes desde el centro L mas cercano al click."""
+        center = self._find_nearest_l_center(event)
+        if center is None:
+            self.mw.statusbar.showMessage(
+                "No hay borrasca (B) cerca del click", 3000,
+            )
+            return
+
+        if self.mw.ds is None:
+            self.mw.statusbar.showMessage(
+                "No hay datos cargados para generar frentes", 3000,
+            )
+            return
+
+        # Verificar si ya existen frentes de este centro
+        existing = [
+            f for f in self.mw.fronts
+            if f.center_id == center.id
+        ]
+        if existing:
+            from PyQt5.QtWidgets import QMessageBox
+            resp = QMessageBox.question(
+                self.mw, "Frentes existentes",
+                f"Ya existen {len(existing)} frentes del centro {center.id}.\n"
+                "Desea reemplazarlos?",
+            )
+            if resp == QMessageBox.Yes:
+                self.mw._push_undo()
+                for f in existing:
+                    self.mw.fronts.remove(f.id)
+            else:
+                return
+        else:
+            self.mw._push_undo()
+
+        from mapa_frentes.fronts.center_fronts import generate_fronts_from_center
+        generated = generate_fronts_from_center(center, self.mw.ds, self.mw.cfg)
+
+        for front in generated:
+            self.mw.fronts.add(front)
+
+        if generated:
+            self.mw.statusbar.showMessage(
+                f"Generados {len(generated)} frentes desde {center.id} "
+                f"({center.value:.0f} hPa)", 5000,
+            )
+        else:
+            self.mw.statusbar.showMessage(
+                f"No se detectaron frentes claros desde {center.id}", 5000,
+            )
+
+        self.mw._refresh_map()
+
+    def _find_nearest_l_center(self, event):
+        """Encuentra el centro L mas cercano al click en coordenadas de pixel."""
+        if not hasattr(self.mw, "centers") or not self.mw.centers:
+            return None
+
+        transform = ccrs.PlateCarree()._as_mpl_transform(self.ax)
+        min_dist = float("inf")
+        best_center = None
+
+        for center in self.mw.centers:
+            if center.type != "L":
+                continue
+            try:
+                px, py = transform.transform_point((center.lon, center.lat))
+                dist = np.sqrt((px - event.x) ** 2 + (py - event.y) ** 2)
+                if dist < min_dist:
+                    min_dist = dist
+                    best_center = center
+            except Exception:
+                continue
+
+        if min_dist < PICK_TOLERANCE_PX * 3:
+            return best_center
+        return None
 
     def _clear_temp_artists(self):
         """Elimina artistas temporales."""

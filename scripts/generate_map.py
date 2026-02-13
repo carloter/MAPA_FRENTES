@@ -155,6 +155,11 @@ def main():
                 fronts = compute_tfp_fronts(ds, cfg)
                 fronts = classify_fronts(fronts, ds, cfg)
 
+                # Asociar frentes a centros de presion y extenderlos
+                if centers:
+                    from mapa_frentes.fronts.association import associate_fronts_to_centers
+                    fronts = associate_fronts_to_centers(fronts, centers, cfg)
+
                 # Lineas de inestabilidad
                 instab_lines = detect_instability_lines(ds, cfg)
                 for il in instab_lines:

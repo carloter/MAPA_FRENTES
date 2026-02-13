@@ -22,6 +22,7 @@ class PressureCenter:
     value: float       # presion en hPa
     primary: bool = True   # True = primario (B/A), False = secundario (b/a)
     name: str = ""         # nombre de borrasca (ej: "Nils"), vacio = sin nombre
+    id: str = ""           # identificador unico (ej: "L_000")
 
 
 def detect_pressure_centers(
@@ -91,7 +92,11 @@ def _add_centers(
                     too_close = True
                     break
         if not too_close:
-            centers.append(PressureCenter(type=ctype, lat=lat, lon=lon, value=val))
+            idx_type = sum(1 for c in centers if c.type == ctype)
+            centers.append(PressureCenter(
+                type=ctype, lat=lat, lon=lon, value=val,
+                id=f"{ctype}_{idx_type:03d}",
+            ))
 
 
 def _classify_primary_secondary(

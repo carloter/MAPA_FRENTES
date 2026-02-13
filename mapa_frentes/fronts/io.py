@@ -30,6 +30,7 @@ def collection_to_geojson(collection: FrontCollection) -> dict:
                 "id": front.id,
                 "front_type": front.front_type.value,
                 "flip_symbols": front.flip_symbols,
+                "center_id": front.center_id,
             },
         )
         features.append(feature)
@@ -77,6 +78,7 @@ def collection_from_geojson(data: dict) -> FrontCollection:
             lons=lons,
             id=fprops.get("id", ""),
             flip_symbols=fprops.get("flip_symbols", False),
+            center_id=fprops.get("center_id", ""),
         )
         collection.add(front)
 

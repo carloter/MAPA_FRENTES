@@ -136,6 +136,7 @@ class MainWindow(QMainWindow):
         self.mode_combo.addItems([
             "Navegar", "Seleccionar", "Arrastrar",
             "Anadir frente", "Borrar frente",
+            "Generar desde B",
         ])
         self.mode_combo.currentTextChanged.connect(self._on_mode_changed)
         toolbar.addWidget(self.mode_combo)
@@ -216,6 +217,12 @@ class MainWindow(QMainWindow):
 
         act_detect = analysis_menu.addAction("&Detectar frentes")
         act_detect.triggered.connect(self._on_detect_fronts)
+
+        act_gen_center = analysis_menu.addAction("&Generar frentes desde borrasca")
+        act_gen_center.setToolTip(
+            "Seleccione modo 'Generar desde B' y haga click en un centro L"
+        )
+        act_gen_center.triggered.connect(self._on_activate_generate_mode)
 
         # Menu Configuracion
         config_menu = menubar.addMenu("&Configuracion")
@@ -319,6 +326,13 @@ class MainWindow(QMainWindow):
             self.fronts = compute_tfp_fronts(self.ds, self.cfg)
             self.fronts = classify_fronts(self.fronts, self.ds, self.cfg)
 
+            # Asociar frentes a centros de presion
+            if self.centers:
+                from mapa_frentes.fronts.association import associate_fronts_to_centers
+                self.fronts = associate_fronts_to_centers(
+                    self.fronts, self.centers, self.cfg,
+                )
+
             # Lineas de inestabilidad
             instab_lines = detect_instability_lines(self.ds, self.cfg)
             for il in instab_lines:
@@ -414,6 +428,22 @@ class MainWindow(QMainWindow):
             if self.ds is not None:
                 self._refresh_map()
 
+    def _on_activate_generate_mode(self):
+        """Activa el modo de generacion desde borrascas."""
+        if self.ds is None:
+            QMessageBox.warning(
+                self, "Sin datos",
+                "Primero descargue datos ECMWF.",
+            )
+            return
+        if not self.centers or not any(c.type == "L" for c in self.centers):
+            QMessageBox.warning(
+                self, "Sin borrascas",
+                "No hay borrascas detectadas. Descargue datos primero.",
+            )
+            return
+        self.mode_combo.setCurrentText("Generar desde B")
+
     def _on_mode_changed(self, mode_text: str):
         """Cambia el modo de edicion."""
         if self._editor is not None:
@@ -423,6 +453,7 @@ class MainWindow(QMainWindow):
                 "Arrastrar": "drag",
                 "Anadir frente": "add",
                 "Borrar frente": "delete",
+                "Generar desde B": "generate",
             }
             self._editor.set_mode(mode_map.get(mode_text, "navigate"))
 

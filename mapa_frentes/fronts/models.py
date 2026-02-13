@@ -31,6 +31,7 @@ class Front:
     lons: np.ndarray
     id: str = ""
     flip_symbols: bool = False
+    center_id: str = ""
 
     def __post_init__(self):
         self.lats = np.asarray(self.lats, dtype=float)

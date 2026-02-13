@@ -44,9 +44,9 @@ class IsobarConfig:
 
 @dataclass
 class PressureCentersConfig:
-    filter_size: int = 30
-    min_distance_deg: float = 5.0
-    secondary_radius_deg: float = 15.0
+    filter_size: int = 20
+    min_distance_deg: float = 3.5
+    secondary_radius_deg: float = 10.0
     h_color: str = "blue"
     l_color: str = "red"
     fontsize: int = 14
@@ -73,7 +73,7 @@ class TFPConfig:
     merge_distance_deg: float = 3.0
     # Frontogenesis filter
     use_frontogenesis_filter: bool = True
-    frontogenesis_threshold: float = 0.0
+    frontogenesis_percentile: int = 25
     # Max fronts
     max_fronts: int = 15
 
@@ -116,6 +116,18 @@ class TemporalConfig:
 
 
 @dataclass
+class CenterFrontsConfig:
+    """Configuracion para generacion de frentes desde centros de presion."""
+    search_radius_deg: float = 5.0
+    trace_step_deg: float = 0.5
+    max_front_length_deg: float = 15.0
+    max_turn_deg: float = 30.0
+    gradient_cutoff_factor: float = 0.3
+    spline_smoothing: float = 0.4
+    max_association_distance_deg: float = 10.0
+
+
+@dataclass
 class ExportConfig:
     default_format: str = "png"
     png_dpi: int = 300
@@ -147,6 +159,7 @@ class AppConfig:
     pressure_centers: PressureCentersConfig = field(default_factory=PressureCentersConfig)
     tfp: TFPConfig = field(default_factory=TFPConfig)
     instability_lines: InstabilityLinesConfig = field(default_factory=InstabilityLinesConfig)
+    center_fronts: CenterFrontsConfig = field(default_factory=CenterFrontsConfig)
     temporal: TemporalConfig = field(default_factory=TemporalConfig)
     plotting: PlottingConfig = field(default_factory=PlottingConfig)
     export: ExportConfig = field(default_factory=ExportConfig)
@@ -173,6 +186,7 @@ def load_config(config_path: str | Path | None = None) -> AppConfig:
         pressure_centers=PressureCentersConfig(**raw.get("pressure_centers", {})),
         tfp=TFPConfig(**raw.get("tfp", {})),
         instability_lines=InstabilityLinesConfig(**raw.get("instability_lines", {})),
+        center_fronts=CenterFrontsConfig(**raw.get("center_fronts", {})),
         temporal=TemporalConfig(**raw.get("temporal", {})),
         plotting=PlottingConfig(**raw.get("plotting", {})),
         export=ExportConfig(**raw.get("export", {})),
