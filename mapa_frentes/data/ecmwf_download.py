@@ -65,6 +65,7 @@ def download_ecmwf(
 
     Returns:
         Dict con claves 'surface' y 'pressure' apuntando a los ficheros GRIB2.
+        Si hay múltiples niveles, 'pressure' apunta al archivo combinado.
     """
     if step is None:
         step = cfg.ecmwf.step
@@ -80,11 +81,11 @@ def download_ecmwf(
         date_tag = date.strftime("%Y%m%d%H")
         step_tag = f"_T{step:03d}" if step > 0 else ""
         sfc_target = target_dir / f"ecmwf_sfc_{date_tag}{step_tag}.grib2"
-        pl_target = target_dir / f"ecmwf_pl850_{date_tag}{step_tag}.grib2"
+        pl_target = target_dir / f"ecmwf_pl_multi_{date_tag}{step_tag}.grib2"
     else:
         step_tag = f"_T{step:03d}" if step > 0 else ""
         sfc_target = target_dir / f"ecmwf_sfc_latest{step_tag}.grib2"
-        pl_target = target_dir / f"ecmwf_pl850_latest{step_tag}.grib2"
+        pl_target = target_dir / f"ecmwf_pl_multi_latest{step_tag}.grib2"
 
     results = {"surface": sfc_target, "pressure": pl_target}
 
@@ -130,21 +131,22 @@ def download_ecmwf(
     else:
         logger.info("Superficie: usando cache")
 
-    # 2) Nivel de presion 850 hPa: t, q, u, v
+    # 2) Niveles de presion: Soporta lista de niveles
     if not pl_ok:
+        levels = cfg.ecmwf.pressure_levels
         logger.info(
-            "Descargando campos 850 hPa: %s", cfg.ecmwf.pressure_params
+            "Descargando campos en niveles %s: %s", levels, cfg.ecmwf.pressure_params
         )
         client.download(
             type="fc",
             param=cfg.ecmwf.pressure_params,
             levtype="pl",
-            levelist=cfg.ecmwf.pressure_level,
+            levelist=levels,  # Ahora puede ser una lista
             target=str(pl_target),
             **base_request,
         )
-        logger.info("Presion 850 hPa guardada en: %s", pl_target)
+        logger.info("Niveles de presion guardados en: %s", pl_target)
     else:
-        logger.info("Presion 850 hPa: usando cache")
+        logger.info("Niveles de presion: usando cache")
 
     return results

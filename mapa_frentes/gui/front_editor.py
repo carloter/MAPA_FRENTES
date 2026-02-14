@@ -5,6 +5,8 @@ Modos de edicion:
 - select: Click en un frente para seleccionarlo
 - drag: Mover vertices del frente seleccionado
 - add: Click para colocar puntos, doble-click para finalizar
+        Si hay un frente seleccionado y el click esta cerca de un extremo,
+        activa modo extension (concatena puntos al frente existente).
 - delete: Click en un frente para eliminarlo
 
 Usa blitting de Matplotlib para rendimiento al arrastrar.
@@ -50,6 +52,10 @@ class FrontEditor:
         self._add_line = None
         self._add_markers = None
 
+        # Estado para extension de frente existente
+        self._extending_front = None
+        self._extending_end = None
+
         # Artistas temporales para feedback visual
         self._vertex_markers = None
         self._highlight_line = None
@@ -79,6 +85,8 @@ class FrontEditor:
         # Finalizar modo anterior si es necesario
         if self.mode == "add" and mode != "add":
             self._finalize_add()
+            self._extending_front = None
+            self._extending_end = None
         self.mode = mode
         self._dragging = False
 
@@ -188,11 +196,33 @@ class FrontEditor:
             self.mw.map_widget.cache_background()
 
     def _handle_add_point(self, event, lon, lat):
-        """Agrega un punto al frente en construccion."""
+        """Agrega un punto al frente en construccion o activa extension."""
         if event.dblclick:
             # Doble click: finalizar frente
             self._finalize_add()
             return
+
+        # Primer click: comprobar si se extiende un frente existente
+        if (
+            len(self._adding_points_lons) == 0
+            and self._extending_front is None
+            and self.selected_front_id
+        ):
+            front = self.mw.fronts.get_by_id(self.selected_front_id)
+            if front is not None:
+                near_end = self._check_near_endpoint(event, front)
+                if near_end is not None:
+                    self._extending_front = front
+                    self._extending_end = near_end
+                    self.mw.statusbar.showMessage(
+                        f"Extendiendo frente {front.id} desde {near_end}",
+                        5000,
+                    )
+                    # Agregar el punto del click como primer punto de extension
+                    self._adding_points_lons.append(lon)
+                    self._adding_points_lats.append(lat)
+                    self._update_add_preview()
+                    return
 
         self._adding_points_lons.append(lon)
         self._adding_points_lats.append(lat)
@@ -212,8 +242,38 @@ class FrontEditor:
             self.mw._refresh_map()
 
     def _finalize_add(self):
-        """Finaliza la creacion de un nuevo frente."""
-        if len(self._adding_points_lons) >= 2:
+        """Finaliza la creacion o extension de un frente."""
+        if self._extending_front is not None:
+            # Modo extension: concatenar puntos al frente existente
+            if len(self._adding_points_lons) >= 1:
+                self.mw._push_undo()
+                new_lats = np.array(self._adding_points_lats)
+                new_lons = np.array(self._adding_points_lons)
+
+                if self._extending_end == "start":
+                    # Invertir los nuevos puntos y prepend
+                    self._extending_front.lats = np.concatenate(
+                        [new_lats[::-1], self._extending_front.lats]
+                    )
+                    self._extending_front.lons = np.concatenate(
+                        [new_lons[::-1], self._extending_front.lons]
+                    )
+                else:
+                    # Append
+                    self._extending_front.lats = np.concatenate(
+                        [self._extending_front.lats, new_lats]
+                    )
+                    self._extending_front.lons = np.concatenate(
+                        [self._extending_front.lons, new_lons]
+                    )
+
+                # Comprobar si el nuevo extremo esta cerca de un centro L
+                self._try_assign_center_to_extended_front()
+
+                self.mw.statusbar.showMessage(
+                    f"Frente extendido: {self._extending_front.id}", 3000,
+                )
+        elif len(self._adding_points_lons) >= 2:
             self.mw._push_undo()
             front = Front(
                 front_type=self.current_front_type,
@@ -227,10 +287,56 @@ class FrontEditor:
 
         self._adding_points_lons.clear()
         self._adding_points_lats.clear()
+        self._extending_front = None
+        self._extending_end = None
         self._clear_temp_artists()
         self.mw._refresh_map()
 
+    def _try_assign_center_to_extended_front(self):
+        """Intenta asignar un centro L al frente extendido si el nuevo extremo esta cerca."""
+        front = self._extending_front
+        if front is None:
+            return
+
+        lows = [c for c in getattr(self.mw, "centers", []) if c.type == "L"]
+        if not lows:
+            return
+
+        from mapa_frentes.fronts.association import find_nearest_center_for_front
+        center, which_end, dist = find_nearest_center_for_front(front, lows)
+
+        max_dist = self.mw.cfg.center_fronts.max_association_distance_deg
+        if dist <= max_dist and center is not None:
+            front.center_id = center.id
+            front.association_end = which_end
+
     # --- Helpers ---
+
+    def _check_near_endpoint(self, event, front: Front) -> str | None:
+        """Comprueba si el click esta cerca de un extremo del frente.
+
+        Returns "start", "end" o None.
+        """
+        transform = ccrs.PlateCarree()._as_mpl_transform(self.ax)
+        tolerance = PICK_TOLERANCE_PX * 2
+
+        # Extremo inicio
+        px_s, py_s = transform.transform_point(
+            (front.lons[0], front.lats[0])
+        )
+        d_start = np.sqrt((px_s - event.x) ** 2 + (py_s - event.y) ** 2)
+
+        # Extremo fin
+        px_e, py_e = transform.transform_point(
+            (front.lons[-1], front.lats[-1])
+        )
+        d_end = np.sqrt((px_e - event.x) ** 2 + (py_e - event.y) ** 2)
+
+        if d_start < d_end and d_start < tolerance:
+            return "start"
+        if d_end <= d_start and d_end < tolerance:
+            return "end"
+        return None
 
     def _find_nearest_front(self, event) -> str | None:
         """Encuentra el frente mas cercano al click en coordenadas de pixel."""
@@ -301,22 +407,46 @@ class FrontEditor:
         self.ax.draw_artist(self._vertex_markers)
 
     def _update_add_preview(self):
-        """Actualiza la preview del frente en construccion."""
+        """Actualiza la preview del frente en construccion o extension."""
         if self._add_line is not None:
             self._add_line.remove()
+            self._add_line = None
         if self._add_markers is not None:
             self._add_markers.remove()
+            self._add_markers = None
+
+        extending = self._extending_front is not None
+        marker_color = "go" if extending else "ro"
+        line_color = "g-" if extending else "r-"
+
+        # En modo extension, incluir los ultimos puntos del frente existente
+        preview_lons = list(self._adding_points_lons)
+        preview_lats = list(self._adding_points_lats)
+
+        if extending and self._extending_front is not None:
+            front = self._extending_front
+            n_ctx = min(3, front.npoints)
+            if self._extending_end == "end":
+                ctx_lons = front.lons[-n_ctx:].tolist()
+                ctx_lats = front.lats[-n_ctx:].tolist()
+                preview_lons = ctx_lons + preview_lons
+                preview_lats = ctx_lats + preview_lats
+            else:
+                ctx_lons = front.lons[:n_ctx].tolist()[::-1]
+                ctx_lats = front.lats[:n_ctx].tolist()[::-1]
+                preview_lons = ctx_lons + preview_lons
+                preview_lats = ctx_lats + preview_lats
 
         if len(self._adding_points_lons) > 0:
             self._add_markers, = self.ax.plot(
                 self._adding_points_lons, self._adding_points_lats,
-                "ro", markersize=5,
+                marker_color, markersize=5,
                 transform=ccrs.PlateCarree(), zorder=10,
             )
-        if len(self._adding_points_lons) > 1:
+        if len(preview_lons) > 1:
             self._add_line, = self.ax.plot(
-                self._adding_points_lons, self._adding_points_lats,
-                "r-", linewidth=2,
+                preview_lons, preview_lats,
+                line_color, linewidth=2,
                 transform=ccrs.PlateCarree(), zorder=10,
             )
         self.canvas.draw_idle()

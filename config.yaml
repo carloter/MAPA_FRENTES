@@ -13,39 +13,49 @@ isobars:
   smooth_sigma: 2.0
   linewidth: 0.6
   color: "#333333"
-  label_fontsize: 7
+  label_fontsize: 6
 
 pressure_centers:
-  filter_size: 20            # puntos de ventana para min/max filter (~5deg a 0.25deg)
-  min_distance_deg: 3.5      # distancia minima entre centros del mismo tipo
-  secondary_radius_deg: 10.0 # radio para clasificar primario/secundario
+  filter_size: 9            # puntos de ventana para min/max filter (~5deg a 0.25deg)
+  min_distance_deg: 4.5     # menos centros secundarios (más estilo sinóptico)
+  secondary_radius_deg: 5.0 # radio para clasificar primario/secundario
+  high_min_pressure: 1012.0 # no marcar H si presion < este valor (hPa)
+  low_max_pressure: 1020.0  # no marcar L si presion > este valor (hPa)
+  min_depth_hpa: 2.0        # profundidad minima (dif. con presion media entorno)
+  depth_radius_deg: 5.0     # radio para calcular presion media del entorno
   h_color: "#0044CC"
   l_color: "#CC0000"
-  fontsize: 14
+  fontsize: 11
   fontweight: "bold"
   high_label: "A"            # etiqueta para anticiclon (estilo AEMET)
   low_label: "B"             # etiqueta para borrasca (estilo AEMET)
 
 tfp:
-  smooth_sigma: 5.0            # suavizado gaussiano de theta_w (puntos de grid)
-  gradient_threshold: 4.0e-6   # K/m - umbral minimo (adaptativo si > p90)
-  min_front_points: 8          # puntos minimos para considerar un frente
-  dbscan_eps_deg: 1.8          # eps para DBSCAN en grados - menos fragmentacion
-  dbscan_min_samples: 3        # min_samples para DBSCAN
-  simplify_tolerance_deg: 0.10 # tolerancia Douglas-Peucker en grados - curvas mas finas
-  use_mslp_filter: true        # filtrar frentes por Laplaciana MSLP (solo ciclonicos)
-  mslp_laplacian_sigma: 8.0    # suavizado MSLP antes de calcular Laplaciana
-  # Connector parameters
-  min_front_length_deg: 3.0    # longitud minima de frente en grados (~300 km)
-  max_hop_deg: 3.0             # distancia maxima de salto entre puntos consecutivos
-  angular_weight: 0.55         # peso penalizacion angular (0=distancia, 1=angular)
-  spline_smoothing: 0.6        # factor de suavizado spline (menor = mas fiel a datos)
-  merge_distance_deg: 3.0      # distancia maxima para fusionar segmentos cercanos
-  # Frontogenesis filter
-  use_frontogenesis_filter: true   # filtrar puntos por frontogenesis positiva
-  frontogenesis_percentile: 25     # percentil de frontogenesis por debajo del cual se descarta
-  # Max fronts
-  max_fronts: 15                   # numero maximo de frentes (los mas largos)
+  smooth_sigma: 5.5                # más sinóptico
+  gradient_threshold: 3.2e-6       # un poco más conservador que 3.0e-6 para bajar ruido
+
+  # detección
+  dbscan_eps_deg: 1.8              # 2.0 tendía a pegar estructuras distintas
+  dbscan_min_samples: 4
+  min_front_points: 3
+
+  # geometría
+  simplify_tolerance_deg: 0.30     # menos “rectificación” excesiva
+  max_hop_deg: 1.5                 # evita saltos largos/teleports
+  angular_weight: 0.70             # 0.75 puede forzar trazas demasiado rígidas
+  spline_smoothing: 0.35
+  merge_distance_deg: 1.6          # 1.2 fusionaba poco; 1.6 une mejor segmentos coherentes
+
+  # filtros físicos
+  use_mslp_filter: true            # clave para evitar frentes en dorsales/subtropicales
+  mslp_laplacian_sigma: 6.5        # 12 suavizaba demasiado la curvatura sinóptica
+
+  use_frontogenesis_filter: true
+  frontogenesis_percentile: 10     # filtra puntos débiles manteniendo frentes reales
+
+  # solo frentes grandes (pero sin pasarse)
+  min_front_length_deg: 2.8        # elimina segmentos cortos “automáticos”
+  max_fronts: 90                   # evita saturación visual
 
 plotting:
   figsize: [18, 11]
@@ -61,30 +71,30 @@ plotting:
   border_linewidth: 0.3
   ocean_color: "#D6EAF8"
   land_color: "#F5F0E8"
-  front_linewidth: 1.8
-  front_symbol_size: 5.0     # tamano de simbolos WMO en frentes
-  front_symbol_spacing: 12.0 # espaciado entre simbolos WMO
+  front_linewidth: 0.8
+  front_symbol_size: 1.4
+  front_symbol_spacing: 1.9
 
 center_fronts:
-  search_radius_deg: 5.0         # radio para muestreo azimutal alrededor del centro
-  trace_step_deg: 0.5            # paso de avance en ray-marching (grados)
-  max_front_length_deg: 15.0     # longitud maxima del frente desde el centro
-  max_turn_deg: 30.0             # giro maximo permitido por paso
-  gradient_cutoff_factor: 0.3    # parar cuando gradiente < factor * pico
-  spline_smoothing: 0.4          # suavizado spline para frentes generados
-  max_association_distance_deg: 10.0  # distancia maxima para asociar frente TFP a centro L
+  search_radius_deg: 6.5
+  trace_step_deg: 0.5
+  max_front_length_deg: 16
+  max_turn_deg: 55              # permite curvatura natural
+  gradient_cutoff_factor: 0.25
+  spline_smoothing: 0.35
+  max_association_distance_deg: 8
 
 temporal:
-  enabled: false
-  context_steps: [-6, -3, 0, 3, 6]   # offsets de step respecto al central
-  match_distance_deg: 3.0             # distancia maxima para emparejar frentes entre timesteps
-  min_persistence: 2                  # numero minimo de timesteps adicionales con correspondencia
+  enabled: true
+  context_steps: [-6, -3, 0, 3, 6]
+  match_distance_deg: 2.5
+  min_persistence: 3             # 4 era muy estricto; 3 se parece más a “criterio humano”
 
 instability_lines:
   enabled: true
-  smooth_sigma: 4.0
-  convergence_threshold: 2.0e-5
-  min_length_deg: 2.0
+  smooth_sigma: 5.0
+  convergence_threshold: 3.5e-5
+  min_length_deg: 3.0
 
 export:
   default_format: "png"
@@ -103,9 +113,26 @@ ecmwf:
   step: 0
   surface_params:
     - "msl"
-  pressure_level: 850
+  pressure_levels: [500, 700, 850]
   pressure_params:
     - "t"
     - "q"
     - "u"
     - "v"
+    - "vo"  # vorticidad relativa
+
+background_field:
+  default_field: "none"      # "none", "theta_e_850", "grad_theta_e_850",
+                             # "thickness_1000_500", "temp_advection_850", "wind_speed_850"
+  alpha: 0.45                # transparencia del contourf
+  num_levels: 20             # numero de niveles de contorno
+  colorbar: true             # mostrar colorbar
+
+occlusion:
+  enabled: true
+  min_score: 0.60
+  vsi_threshold: 0.10
+  vorticity_threshold: 8.0e-5
+  t_pattern_radius_deg: 5.0
+  t_pattern_max_angle: 90.0
+  use_multilevel: true

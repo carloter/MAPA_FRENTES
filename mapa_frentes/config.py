@@ -47,6 +47,10 @@ class PressureCentersConfig:
     filter_size: int = 20
     min_distance_deg: float = 3.5
     secondary_radius_deg: float = 10.0
+    high_min_pressure: float = 1012.0   # No marcar H si presion < este valor
+    low_max_pressure: float = 1020.0    # No marcar L si presion > este valor
+    min_depth_hpa: float = 2.0          # Profundidad minima (dif. con entorno)
+    depth_radius_deg: float = 5.0       # Radio para calcular presion media entorno
     h_color: str = "blue"
     l_color: str = "red"
     fontsize: int = 14
@@ -128,6 +132,29 @@ class CenterFrontsConfig:
 
 
 @dataclass
+class OcclusionConfig:
+    """Configuracion para deteccion robusta de oclusiones."""
+    enabled: bool = True
+    min_score: float = 0.60           # Score mínimo para clasificar como ocluido
+    vsi_threshold: float = 0.10       # VSI para warm-core seclusion
+    vorticity_threshold: float = 8e-5 # s⁻¹
+    t_pattern_radius_deg: float = 5.0 # Radio búsqueda patrón T
+    t_pattern_max_angle: float = 90.0 # Ángulo máximo convergencia
+    use_multilevel: bool = True       # Si False, solo 850 hPa (fallback)
+
+
+@dataclass
+class BackgroundFieldConfig:
+    """Configuracion para campos de fondo derivados del IFS."""
+    default_field: str = "none"   # "none", "theta_e_850", "grad_theta_e_850",
+                                  # "thickness_1000_500", "temp_advection_850",
+                                  # "wind_speed_850"
+    alpha: float = 0.45           # Transparencia del contourf
+    num_levels: int = 20          # Numero de niveles de contorno
+    colorbar: bool = True         # Mostrar colorbar
+
+
+@dataclass
 class ExportConfig:
     default_format: str = "png"
     png_dpi: int = 300
@@ -148,8 +175,8 @@ class ECMWFConfig:
     resol: str = "0p25"
     step: int = 0
     surface_params: List[str] = field(default_factory=lambda: ["msl"])
-    pressure_level: int = 850
-    pressure_params: List[str] = field(default_factory=lambda: ["t", "q", "u", "v"])
+    pressure_levels: List[int] = field(default_factory=lambda: [500, 700, 850])
+    pressure_params: List[str] = field(default_factory=lambda: ["t", "q", "u", "v", "vo"])
 
 
 @dataclass
@@ -165,6 +192,8 @@ class AppConfig:
     export: ExportConfig = field(default_factory=ExportConfig)
     data: DataConfig = field(default_factory=DataConfig)
     ecmwf: ECMWFConfig = field(default_factory=ECMWFConfig)
+    occlusion: OcclusionConfig = field(default_factory=OcclusionConfig)
+    background_field: BackgroundFieldConfig = field(default_factory=BackgroundFieldConfig)
 
 
 def load_config(config_path: str | Path | None = None) -> AppConfig:
@@ -192,4 +221,6 @@ def load_config(config_path: str | Path | None = None) -> AppConfig:
         export=ExportConfig(**raw.get("export", {})),
         data=DataConfig(**raw.get("data", {})),
         ecmwf=ECMWFConfig(**raw.get("ecmwf", {})),
+        occlusion=OcclusionConfig(**raw.get("occlusion", {})),
+        background_field=BackgroundFieldConfig(**raw.get("background_field", {})),
     )

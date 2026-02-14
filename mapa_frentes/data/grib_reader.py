@@ -115,18 +115,18 @@ def read_grib_files(
 
     Usa filter_by_keys para separar correctamente:
     - MSL de las variables de superficie
-    - t, q, u, v del nivel de presion 850 hPa
+    - t, q, u, v, vo de los niveles de presion (500, 700, 850 hPa)
 
     Args:
         grib_paths: Dict con claves 'surface' y 'pressure' apuntando a GRIB2.
         cfg: Configuracion de la aplicacion.
 
     Returns:
-        xr.Dataset con variables: msl, t850, q850, u850, v850
+        xr.Dataset con variables: msl, t500, t700, t850, q500, q700, q850, etc.
         recortado al area de interes.
     """
     area = _compute_data_area(cfg)  # Area calculada para cubrir proyeccion Lambert
-    level = cfg.ecmwf.pressure_level  # 850
+    levels = cfg.ecmwf.pressure_levels  # [500, 700, 850]
 
     # --- 1. Leer MSL (mean sea level pressure) ---
     sfc_path = grib_paths["surface"]
@@ -142,31 +142,33 @@ def read_grib_files(
         )
     logger.info("MSL leida: shape=%s", msl.shape)
 
-    # --- 2. Leer variables a 850 hPa ---
+    # --- 2. Leer variables a multiples niveles de presion ---
     # Intentar primero del fichero de presion, luego del de superficie
     # (el SCDA puede meter todo en un solo fichero)
     pl_path = grib_paths["pressure"]
     pl_vars = {}
 
-    for param in cfg.ecmwf.pressure_params:  # t, q, u, v
-        var = _read_variable(pl_path, shortName=param, level=level,
-                             typeOfLevel="isobaricInhPa")
-        if var is None:
-            # Probar en el fichero de superficie (mismo bundle SCDA)
-            var = _read_variable(sfc_path, shortName=param, level=level,
+    for level in levels:
+        for param in cfg.ecmwf.pressure_params:  # t, q, u, v, vo
+            var = _read_variable(pl_path, shortName=param, level=level,
                                  typeOfLevel="isobaricInhPa")
-        if var is None:
-            logger.warning("Variable '%s' a %d hPa no encontrada", param, level)
-        else:
-            pl_vars[param] = var
-            logger.info(
-                "%s a %d hPa: min=%.1f, max=%.1f",
-                param, level, float(var.min()), float(var.max()),
-            )
+            if var is None:
+                # Probar en el fichero de superficie (mismo bundle SCDA)
+                var = _read_variable(sfc_path, shortName=param, level=level,
+                                     typeOfLevel="isobaricInhPa")
+            if var is None:
+                logger.warning("Variable '%s' a %d hPa no encontrada", param, level)
+            else:
+                var_name = f"{param}{level}"
+                pl_vars[var_name] = var
+                logger.info(
+                    "%s a %d hPa: min=%.1f, max=%.1f",
+                    param, level, float(var.min()), float(var.max()),
+                )
 
     if not pl_vars:
         raise RuntimeError(
-            f"No se encontraron variables de presion a {level} hPa. "
+            f"No se encontraron variables de presion en niveles {levels}. "
             "El fichero GRIB puede no contener niveles isobaricos."
         )
 
@@ -177,10 +179,9 @@ def read_grib_files(
     ds = xr.Dataset()
     ds["msl"] = msl
 
-    var_mapping = {"t": "t850", "q": "q850", "u": "u850", "v": "v850"}
-    for src, dst in var_mapping.items():
-        if src in pl_vars:
-            ds[dst] = pl_vars[src]
+    # Añadir todas las variables de niveles de presion
+    for var_name, var_data in pl_vars.items():
+        ds[var_name] = var_data
 
     # Recortar al area de interes
     ds = _crop_to_area(ds, lat_name, lon_name, area)

@@ -329,7 +329,7 @@ def compute_tfp_fronts(ds: xr.Dataset, cfg: AppConfig) -> FrontCollection:
         n_before = len(front_lats)
         front_lats, front_lons = _frontogenesis_filter(
             front_lats, front_lons, ds, lats, lons, theta_w,
-            threshold=tfp_cfg.frontogenesis_threshold,
+            percentile=tfp_cfg.frontogenesis_percentile,
         )
         logger.info(
             "Filtro frontogenesis: %d -> %d puntos (eliminados %d frontoliticos)",

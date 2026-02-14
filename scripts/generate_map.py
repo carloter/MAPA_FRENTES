@@ -155,7 +155,7 @@ def main():
                 fronts = compute_tfp_fronts(ds, cfg)
                 fronts = classify_fronts(fronts, ds, cfg)
 
-                # Asociar frentes a centros de presion y extenderlos
+                # Asociar frentes a centros de presion (solo metadata)
                 if centers:
                     from mapa_frentes.fronts.association import associate_fronts_to_centers
                     fronts = associate_fronts_to_centers(fronts, centers, cfg)
@@ -167,6 +167,12 @@ def main():
 
             draw_fronts(ax, fronts, cfg)
             draw_front_legend(ax, cfg)
+
+            # Lineas de asociacion frente-borrasca
+            if centers:
+                from mapa_frentes.plotting.front_renderer import draw_association_lines
+                draw_association_lines(ax, fronts, centers, cfg)
+
             logger.info("Frentes dibujados: %d", len(fronts.fronts))
         except Exception as e:
             logger.error("Error al detectar/dibujar frentes: %s", e)

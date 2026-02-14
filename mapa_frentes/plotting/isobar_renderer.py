@@ -1,11 +1,14 @@
-"""Renderizado de isobaras y etiquetas A/B en el mapa."""
+"""Renderizado de isobaras, etiquetas A/B y campos de fondo en el mapa."""
 
 import numpy as np
 import cartopy.crs as ccrs
+import matplotlib.colors as mcolors
 from matplotlib.axes import Axes
+from mpl_toolkits.axes_grid1.inset_locator import inset_axes  # <-- NUEVO
 
 from mapa_frentes.config import AppConfig
 from mapa_frentes.analysis.pressure_centers import PressureCenter
+from mapa_frentes.analysis.derived_fields import DerivedField
 
 
 def draw_isobars(
@@ -137,3 +140,92 @@ def draw_pressure_labels(
                 alpha=0.7,
             ),
         )
+
+
+def draw_background_field(
+    ax: Axes,
+    derived: DerivedField,
+    lons: np.ndarray,
+    lats: np.ndarray,
+    cfg: AppConfig,
+) -> None:
+    """Dibuja un campo derivado como fondo sombreado (contourf).
+
+    IMPORTANTE: la colorbar se dibuja en un "inset axes" para NO
+    reducir el tamaño del mapa (evita el shrink del axes principal).
+
+    Args:
+        ax: Axes de matplotlib con proyeccion cartopy.
+        derived: DerivedField con datos, label, units, cmap, center_zero.
+        lons: Array 1D de longitudes.
+        lats: Array 1D de latitudes.
+        cfg: Configuracion de la app.
+    """
+    bg_cfg = cfg.background_field
+    lon2d, lat2d = np.meshgrid(lons, lats)
+
+    data = derived.data
+    num_levels = bg_cfg.num_levels
+
+    # Calcular niveles de contorno
+    vmin = float(np.nanmin(data))
+    vmax = float(np.nanmax(data))
+
+    if derived.center_zero:
+        # Simetrico alrededor de 0
+        abs_max = max(abs(vmin), abs(vmax))
+        levels = np.linspace(-abs_max, abs_max, num_levels)
+        norm = mcolors.TwoSlopeNorm(vmin=-abs_max, vcenter=0, vmax=abs_max)
+    else:
+        levels = np.linspace(vmin, vmax, num_levels)
+        norm = None
+
+    cf = ax.contourf(
+        lon2d, lat2d, data,
+        levels=levels,
+        cmap=derived.cmap,
+        norm=norm,
+        alpha=bg_cfg.alpha,
+        transform=ccrs.PlateCarree(),
+        zorder=1.5,
+        extend="both",
+    )
+
+    if not bg_cfg.colorbar:
+        return
+
+    fig = ax.get_figure()
+
+    # --- Eliminar colorbar anterior si existe (sin tocar el tamaño del mapa) ---
+    if hasattr(fig, "_bg_cbar") and fig._bg_cbar is not None:
+        try:
+            fig._bg_cbar.remove()
+        except Exception:
+            pass
+        fig._bg_cbar = None
+
+    # --- Crear eje inset para la colorbar (NO encoge el axes principal) ---
+    # Ajusta width/height y bbox si quieres mas/menos grande
+        # --- Crear eje inset para la colorbar (alta, estrecha y pegada al mapa) ---
+    cax = inset_axes(
+        ax,
+        width="2.1%",           # más estrecha (antes 2.8%)
+        height="92%",           # casi toda la altura (antes 45%)
+        loc="lower left",
+        bbox_to_anchor=(1.01, 0.04, 1, 1),  # más cerca (antes 1.02) y más abajo
+        bbox_transform=ax.transAxes,
+        borderpad=0.0,
+    )
+
+    fig._bg_cbar = fig.colorbar(cf, cax=cax, orientation="vertical")
+
+    # Etiquetas más pequeñas
+    fig._bg_cbar.set_label(f"{derived.label} ({derived.units})", fontsize=7)
+    fig._bg_cbar.ax.tick_params(labelsize=6, length=3)
+
+    # Opcional: quitar decimales en ticks (muy recomendable en mapas operativos)
+    try:
+        fig._bg_cbar.ax.yaxis.set_major_formatter("{x:.0f}")
+    except Exception:
+        pass
+

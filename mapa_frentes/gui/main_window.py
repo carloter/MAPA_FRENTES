@@ -102,6 +102,9 @@ class MainWindow(QMainWindow):
         self.map_widget = MapWidget(self.cfg, parent=self)
         self.setCentralWidget(self.map_widget)
 
+        # Guardar la posicion ORIGINAL del axes (antes de cualquier colorbar)
+        self._original_ax_pos = self.map_widget.ax.get_position()
+
     def _setup_toolbar(self):
         toolbar = QToolBar("Herramientas")
         toolbar.setMovable(False)
@@ -147,6 +150,40 @@ class MainWindow(QMainWindow):
         self.type_combo.addItems(["Frio", "Calido", "Ocluido", "Estacionario", "Linea inestabilidad"])
         self.type_combo.currentTextChanged.connect(self._on_type_changed)
         toolbar.addWidget(self.type_combo)
+
+        # Conectar frente a borrasca
+        self.act_connect_b = QAction("Conectar a B", self)
+        self.act_connect_b.setToolTip(
+            "Extiende el frente seleccionado hasta la borrasca mas cercana"
+        )
+        self.act_connect_b.triggered.connect(self._on_connect_to_b)
+        toolbar.addAction(self.act_connect_b)
+
+        toolbar.addSeparator()
+
+        # Checkbox para mostrar lineas de asociacion
+        self.assoc_check = QCheckBox("Asociaciones")
+        self.assoc_check.setChecked(True)
+        self.assoc_check.setToolTip("Mostrar lineas de asociacion frente-borrasca")
+        self.assoc_check.toggled.connect(lambda: self._refresh_map())
+        toolbar.addWidget(self.assoc_check)
+
+        toolbar.addSeparator()
+
+        # Selector de campo de fondo
+        toolbar.addWidget(QLabel(" Fondo: "))
+        self.bg_combo = QComboBox()
+        self.bg_combo.addItem("Ninguno", "none")
+        self.bg_combo.addItem("θe 850 hPa", "theta_e_850")
+        self.bg_combo.addItem("|∇θe| 850 hPa", "grad_theta_e_850")
+        self.bg_combo.addItem("Espesor 1000-500", "thickness_1000_500")
+        self.bg_combo.addItem("Adv. T 850 hPa", "temp_advection_850")
+        self.bg_combo.addItem("Viento 850 hPa", "wind_speed_850")
+        self.bg_combo.setToolTip("Campo derivado IFS como fondo del mapa")
+        self.bg_combo.currentIndexChanged.connect(self._on_bg_field_changed)
+        toolbar.addWidget(self.bg_combo)
+        self._cached_bg_field = None   # cache del campo calculado
+        self._cached_bg_name = "none"  # nombre del campo en cache
 
         toolbar.addSeparator()
 
@@ -211,6 +248,12 @@ class MainWindow(QMainWindow):
         act_name_storm = edit_menu.addAction("&Nombrar borrasca...")
         act_name_storm.setShortcut(QKeySequence("Ctrl+N"))
         act_name_storm.triggered.connect(self._on_name_storm)
+
+        edit_menu.addSeparator()
+
+        act_connect = edit_menu.addAction("Conectar frente a &B")
+        act_connect.setShortcut(QKeySequence("Ctrl+B"))
+        act_connect.triggered.connect(self._on_connect_to_b)
 
         # Menu Analisis
         analysis_menu = menubar.addMenu("&Analisis")
@@ -285,6 +328,8 @@ class MainWindow(QMainWindow):
     def _on_download_finished(self, ds):
         """Callback cuando la descarga termina."""
         self.ds = ds
+        self._cached_bg_field = None  # invalidar cache de campo de fondo
+        self._cached_bg_name = "none"
         self.act_download.setEnabled(True)
         self.act_detect.setEnabled(True)
         self.progress_bar.setVisible(False)
@@ -484,6 +529,24 @@ class MainWindow(QMainWindow):
                     front.front_type = new_type
                     self._refresh_map()
 
+    def _on_bg_field_changed(self):
+        """Cambia el campo de fondo y refresca el mapa."""
+        self._cached_bg_field = None  # invalidar cache
+        self._cached_bg_name = "none"
+        self._refresh_map()
+
+    def _get_bg_field(self, field_name, lats, lons):
+        """Obtiene campo de fondo con cache para evitar recalcular."""
+        if self._cached_bg_name == field_name and self._cached_bg_field is not None:
+            return self._cached_bg_field
+
+        from mapa_frentes.analysis.derived_fields import compute_derived_field
+        derived = compute_derived_field(self.ds, field_name, lats, lons)
+        if derived is not None:
+            self._cached_bg_field = derived
+            self._cached_bg_name = field_name
+        return derived
+
     def _on_delete_selected(self):
         """Borra el frente seleccionado."""
         if self._editor is not None and self._editor.selected_front_id:
@@ -491,6 +554,43 @@ class MainWindow(QMainWindow):
             self.fronts.remove(self._editor.selected_front_id)
             self._editor.selected_front_id = None
             self._refresh_map()
+
+    def _on_connect_to_b(self):
+        """Extiende el frente seleccionado hasta la borrasca mas cercana."""
+        if self._editor is None or not self._editor.selected_front_id:
+            self.statusbar.showMessage(
+                "Seleccione un frente primero", 3000,
+            )
+            return
+
+        front = self.fronts.get_by_id(self._editor.selected_front_id)
+        if front is None:
+            return
+
+        lows = [c for c in self.centers if c.type == "L"]
+        if not lows:
+            self.statusbar.showMessage("No hay borrascas detectadas", 3000)
+            return
+
+        from mapa_frentes.fronts.association import (
+            find_nearest_center_for_front, smooth_extend_to_center,
+        )
+
+        center, which_end, dist = find_nearest_center_for_front(front, lows)
+        max_dist = self.cfg.center_fronts.max_association_distance_deg
+
+        if center is None or dist > max_dist:
+            self.statusbar.showMessage(
+                f"No hay borrasca dentro del umbral ({max_dist:.0f} deg)", 3000,
+            )
+            return
+
+        self._push_undo()
+        smooth_extend_to_center(front, center, which_end, self.cfg)
+        self.statusbar.showMessage(
+            f"Frente conectado a {center.id} ({center.value:.0f} hPa)", 5000,
+        )
+        self._refresh_map()
 
     # --- Undo/Redo ---
 
@@ -538,6 +638,18 @@ class MainWindow(QMainWindow):
 
         ax.clear()
 
+        # Eliminar colorbars previas y restaurar geometria del axes principal
+        
+        fig = ax.get_figure()
+
+        # Borra axes extra (típicamente colorbars creadas como axes separados)
+        while len(fig.axes) > 1:
+            fig.delaxes(fig.axes[-1])
+
+        # Restaurar SIEMPRE la geometria original del axes principal
+        ax.set_position(self._original_ax_pos)
+
+
         # Re-aplicar decoracion base
         from mapa_frentes.plotting.map_canvas import create_map_figure
         import cartopy.crs as ccrs
@@ -569,19 +681,30 @@ class MainWindow(QMainWindow):
         gl.top_labels = False
         gl.right_labels = False
 
+        # Tamaño de etiquetas de la rejilla
+        gl.xlabel_style = {"size": 7}
+        gl.ylabel_style = {"size": 7}
+
         # Dibujar datos si disponibles
         if self.ds is not None:
             from mapa_frentes.analysis.isobars import (
                 smooth_mslp, compute_isobar_levels,
             )
             from mapa_frentes.plotting.isobar_renderer import (
-                draw_isobars, draw_pressure_labels,
+                draw_isobars, draw_pressure_labels, draw_background_field,
             )
 
             lat_name = "latitude" if "latitude" in self.ds.coords else "lat"
             lon_name = "longitude" if "longitude" in self.ds.coords else "lon"
             lats = self.ds[lat_name].values
             lons = self.ds[lon_name].values
+
+            # Campo de fondo derivado (antes de isobaras)
+            bg_name = self.bg_combo.currentData()
+            if bg_name and bg_name != "none":
+                derived = self._get_bg_field(bg_name, lats, lons)
+                if derived is not None:
+                    draw_background_field(ax, derived, lons, lats, self.cfg)
 
             msl_smooth = smooth_mslp(
                 self.ds["msl"], sigma=self.cfg.isobars.smooth_sigma
@@ -615,13 +738,23 @@ class MainWindow(QMainWindow):
             draw_fronts(ax, self.fronts, self.cfg, highlight_id=highlight)
             draw_front_legend(ax, self.cfg)
 
+            # Lineas de asociacion frente-borrasca
+            if self.assoc_check.isChecked() and self.centers:
+                from mapa_frentes.plotting.front_renderer import (
+                    draw_association_lines,
+                )
+                draw_association_lines(
+                    ax, self.fronts, self.centers, self.cfg,
+                )
+
         # Restaurar extent si estabamos con zoom
         if current_extent is not None:
             try:
                 ax.set_extent(current_extent, crs=ccrs.PlateCarree())
             except Exception:
                 pass
-
+        # Dejar espacio inferior para la leyenda
+        ax.figure.subplots_adjust(bottom=0.10)
         self.map_widget.redraw()
 
     # --- Centros de presion ---

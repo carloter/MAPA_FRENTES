@@ -1,0 +1,2018 @@
+{
+  "type": "FeatureCollection",
+  "properties": {
+    "valid_time": "2026-02-13T18:00",
+    "n_systems": 51,
+    "n_unassociated_fronts": 18
+  },
+  "features": [
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -51.5,
+          52.25
+        ]
+      },
+      "properties": {
+        "system_id": "L_000",
+        "center_lat": 52.25,
+        "center_lon": -51.5,
+        "center_pressure": 979.310791015625,
+        "center_type": "L",
+        "is_primary": true,
+        "name": "",
+        "valid_time": "2026-02-13T18:00",
+        "metadata": {
+          "n_fronts": 0,
+          "n_cold": 0,
+          "n_warm": 0,
+          "n_occluded": 0,
+          "total_length_deg": 0.0
+        },
+        "front_ids": [],
+        "n_fronts": 0,
+        "n_secondary_centers": 0
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          4.0,
+          42.25
+        ]
+      },
+      "properties": {
+        "system_id": "L_001",
+        "center_lat": 42.25,
+        "center_lon": 4.0,
+        "center_pressure": 983.5448608398438,
+        "center_type": "L",
+        "is_primary": true,
+        "name": "",
+        "valid_time": "2026-02-13T18:00",
+        "metadata": {
+          "n_fronts": 0,
+          "n_cold": 0,
+          "n_warm": 0,
+          "n_occluded": 0,
+          "total_length_deg": 0.0
+        },
+        "front_ids": [],
+        "n_fronts": 0,
+        "n_secondary_centers": 0
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          24.75,
+          54.5
+        ]
+      },
+      "properties": {
+        "system_id": "L_002",
+        "center_lat": 54.5,
+        "center_lon": 24.75,
+        "center_pressure": 987.7188110351562,
+        "center_type": "L",
+        "is_primary": true,
+        "name": "",
+        "valid_time": "2026-02-13T18:00",
+        "metadata": {
+          "n_fronts": 0,
+          "n_cold": 0,
+          "n_warm": 0,
+          "n_occluded": 0,
+          "total_length_deg": 0.0
+        },
+        "front_ids": [],
+        "n_fronts": 0,
+        "n_secondary_centers": 0
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          57.75,
+          70.0
+        ]
+      },
+      "properties": {
+        "system_id": "L_003",
+        "center_lat": 70.0,
+        "center_lon": 57.75,
+        "center_pressure": 990.39453125,
+        "center_type": "L",
+        "is_primary": true,
+        "name": "",
+        "valid_time": "2026-02-13T18:00",
+        "metadata": {
+          "n_fronts": 0,
+          "n_cold": 0,
+          "n_warm": 0,
+          "n_occluded": 0,
+          "total_length_deg": 0.0
+        },
+        "front_ids": [],
+        "n_fronts": 0,
+        "n_secondary_centers": 0
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          31.0,
+          43.75
+        ]
+      },
+      "properties": {
+        "system_id": "L_004",
+        "center_lat": 43.75,
+        "center_lon": 31.0,
+        "center_pressure": 990.9307861328125,
+        "center_type": "L",
+        "is_primary": true,
+        "name": "",
+        "valid_time": "2026-02-13T18:00",
+        "metadata": {
+          "n_fronts": 0,
+          "n_cold": 0,
+          "n_warm": 0,
+          "n_occluded": 0,
+          "total_length_deg": 0.0
+        },
+        "front_ids": [],
+        "n_fronts": 0,
+        "n_secondary_centers": 0
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          8.5,
+          45.0
+        ]
+      },
+      "properties": {
+        "system_id": "L_005",
+        "center_lat": 45.0,
+        "center_lon": 8.5,
+        "center_pressure": 993.0615234375,
+        "center_type": "L",
+        "is_primary": true,
+        "name": "",
+        "valid_time": "2026-02-13T18:00",
+        "metadata": {
+          "n_fronts": 0,
+          "n_cold": 0,
+          "n_warm": 0,
+          "n_occluded": 0,
+          "total_length_deg": 0.0
+        },
+        "front_ids": [],
+        "n_fronts": 0,
+        "n_secondary_centers": 0
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          30.25,
+          72.0
+        ]
+      },
+      "properties": {
+        "system_id": "L_006",
+        "center_lat": 72.0,
+        "center_lon": 30.25,
+        "center_pressure": 993.1608276367188,
+        "center_type": "L",
+        "is_primary": true,
+        "name": "",
+        "valid_time": "2026-02-13T18:00",
+        "metadata": {
+          "n_fronts": 0,
+          "n_cold": 0,
+          "n_warm": 0,
+          "n_occluded": 0,
+          "total_length_deg": 0.0
+        },
+        "front_ids": [],
+        "n_fronts": 0,
+        "n_secondary_centers": 0
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          26.0,
+          46.25
+        ]
+      },
+      "properties": {
+        "system_id": "L_007",
+        "center_lat": 46.25,
+        "center_lon": 26.0,
+        "center_pressure": 993.4773559570312,
+        "center_type": "L",
+        "is_primary": true,
+        "name": "",
+        "valid_time": "2026-02-13T18:00",
+        "metadata": {
+          "n_fronts": 0,
+          "n_cold": 0,
+          "n_warm": 0,
+          "n_occluded": 0,
+          "total_length_deg": 0.0
+        },
+        "front_ids": [],
+        "n_fronts": 0,
+        "n_secondary_centers": 0
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          19.25,
+          71.25
+        ]
+      },
+      "properties": {
+        "system_id": "L_008",
+        "center_lat": 71.25,
+        "center_lon": 19.25,
+        "center_pressure": 993.6947631835938,
+        "center_type": "L",
+        "is_primary": true,
+        "name": "",
+        "valid_time": "2026-02-13T18:00",
+        "metadata": {
+          "n_fronts": 0,
+          "n_cold": 0,
+          "n_warm": 0,
+          "n_occluded": 0,
+          "total_length_deg": 0.0
+        },
+        "front_ids": [],
+        "n_fronts": 0,
+        "n_secondary_centers": 0
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          11.25,
+          72.0
+        ]
+      },
+      "properties": {
+        "system_id": "L_009",
+        "center_lat": 72.0,
+        "center_lon": 11.25,
+        "center_pressure": 993.7884521484375,
+        "center_type": "L",
+        "is_primary": true,
+        "name": "",
+        "valid_time": "2026-02-13T18:00",
+        "metadata": {
+          "n_fronts": 0,
+          "n_cold": 0,
+          "n_warm": 0,
+          "n_occluded": 0,
+          "total_length_deg": 0.0
+        },
+        "front_ids": [],
+        "n_fronts": 0,
+        "n_secondary_centers": 0
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          14.0,
+          50.25
+        ]
+      },
+      "properties": {
+        "system_id": "L_010",
+        "center_lat": 50.25,
+        "center_lon": 14.0,
+        "center_pressure": 994.9205932617188,
+        "center_type": "L",
+        "is_primary": true,
+        "name": "",
+        "valid_time": "2026-02-13T18:00",
+        "metadata": {
+          "n_fronts": 0,
+          "n_cold": 0,
+          "n_warm": 0,
+          "n_occluded": 0,
+          "total_length_deg": 0.0
+        },
+        "front_ids": [],
+        "n_fronts": 0,
+        "n_secondary_centers": 0
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          19.0,
+          41.75
+        ]
+      },
+      "properties": {
+        "system_id": "L_011",
+        "center_lat": 41.75,
+        "center_lon": 19.0,
+        "center_pressure": 996.318359375,
+        "center_type": "L",
+        "is_primary": true,
+        "name": "",
+        "valid_time": "2026-02-13T18:00",
+        "metadata": {
+          "n_fronts": 0,
+          "n_cold": 0,
+          "n_warm": 0,
+          "n_occluded": 0,
+          "total_length_deg": 0.0
+        },
+        "front_ids": [],
+        "n_fronts": 0,
+        "n_secondary_centers": 0
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -37.75,
+          49.0
+        ]
+      },
+      "properties": {
+        "system_id": "L_012",
+        "center_lat": 49.0,
+        "center_lon": -37.75,
+        "center_pressure": 996.5726928710938,
+        "center_type": "L",
+        "is_primary": true,
+        "name": "",
+        "valid_time": "2026-02-13T18:00",
+        "metadata": {
+          "n_fronts": 0,
+          "n_cold": 0,
+          "n_warm": 0,
+          "n_occluded": 0,
+          "total_length_deg": 0.0
+        },
+        "front_ids": [],
+        "n_fronts": 0,
+        "n_secondary_centers": 0
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          3.0,
+          59.75
+        ]
+      },
+      "properties": {
+        "system_id": "L_013",
+        "center_lat": 59.75,
+        "center_lon": 3.0,
+        "center_pressure": 998.348876953125,
+        "center_type": "L",
+        "is_primary": true,
+        "name": "",
+        "valid_time": "2026-02-13T18:00",
+        "metadata": {
+          "n_fronts": 0,
+          "n_cold": 0,
+          "n_warm": 0,
+          "n_occluded": 0,
+          "total_length_deg": 0.0
+        },
+        "front_ids": [],
+        "n_fronts": 0,
+        "n_secondary_centers": 0
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          6.25,
+          33.75
+        ]
+      },
+      "properties": {
+        "system_id": "L_014",
+        "center_lat": 33.75,
+        "center_lon": 6.25,
+        "center_pressure": 998.6764526367188,
+        "center_type": "L",
+        "is_primary": true,
+        "name": "",
+        "valid_time": "2026-02-13T18:00",
+        "metadata": {
+          "n_fronts": 0,
+          "n_cold": 0,
+          "n_warm": 0,
+          "n_occluded": 0,
+          "total_length_deg": 0.0
+        },
+        "front_ids": [],
+        "n_fronts": 0,
+        "n_secondary_centers": 0
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          1.25,
+          31.5
+        ]
+      },
+      "properties": {
+        "system_id": "L_015",
+        "center_lat": 31.5,
+        "center_lon": 1.25,
+        "center_pressure": 1002.562744140625,
+        "center_type": "L",
+        "is_primary": true,
+        "name": "",
+        "valid_time": "2026-02-13T18:00",
+        "metadata": {
+          "n_fronts": 0,
+          "n_cold": 0,
+          "n_warm": 0,
+          "n_occluded": 0,
+          "total_length_deg": 0.0
+        },
+        "front_ids": [],
+        "n_fronts": 0,
+        "n_secondary_centers": 0
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -13.75,
+          62.25
+        ]
+      },
+      "properties": {
+        "system_id": "L_016",
+        "center_lat": 62.25,
+        "center_lon": -13.75,
+        "center_pressure": 1003.1497802734375,
+        "center_type": "L",
+        "is_primary": true,
+        "name": "",
+        "valid_time": "2026-02-13T18:00",
+        "metadata": {
+          "n_fronts": 0,
+          "n_cold": 0,
+          "n_warm": 0,
+          "n_occluded": 0,
+          "total_length_deg": 0.0
+        },
+        "front_ids": [],
+        "n_fronts": 0,
+        "n_secondary_centers": 0
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          57.75,
+          63.0
+        ]
+      },
+      "properties": {
+        "system_id": "L_017",
+        "center_lat": 63.0,
+        "center_lon": 57.75,
+        "center_pressure": 1003.435546875,
+        "center_type": "L",
+        "is_primary": true,
+        "name": "",
+        "valid_time": "2026-02-13T18:00",
+        "metadata": {
+          "n_fronts": 0,
+          "n_cold": 0,
+          "n_warm": 0,
+          "n_occluded": 0,
+          "total_length_deg": 0.0
+        },
+        "front_ids": [],
+        "n_fronts": 0,
+        "n_secondary_centers": 0
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          49.75,
+          41.5
+        ]
+      },
+      "properties": {
+        "system_id": "L_018",
+        "center_lat": 41.5,
+        "center_lon": 49.75,
+        "center_pressure": 1004.3475341796875,
+        "center_type": "L",
+        "is_primary": true,
+        "name": "",
+        "valid_time": "2026-02-13T18:00",
+        "metadata": {
+          "n_fronts": 0,
+          "n_cold": 0,
+          "n_warm": 0,
+          "n_occluded": 0,
+          "total_length_deg": 0.0
+        },
+        "front_ids": [],
+        "n_fronts": 0,
+        "n_secondary_centers": 0
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -30.75,
+          63.25
+        ]
+      },
+      "properties": {
+        "system_id": "L_019",
+        "center_lat": 63.25,
+        "center_lon": -30.75,
+        "center_pressure": 1004.5572509765625,
+        "center_type": "L",
+        "is_primary": true,
+        "name": "",
+        "valid_time": "2026-02-13T18:00",
+        "metadata": {
+          "n_fronts": 0,
+          "n_cold": 0,
+          "n_warm": 0,
+          "n_occluded": 0,
+          "total_length_deg": 0.0
+        },
+        "front_ids": [],
+        "n_fronts": 0,
+        "n_secondary_centers": 0
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          37.75,
+          33.75
+        ]
+      },
+      "properties": {
+        "system_id": "L_020",
+        "center_lat": 33.75,
+        "center_lon": 37.75,
+        "center_pressure": 1006.1611938476562,
+        "center_type": "L",
+        "is_primary": true,
+        "name": "",
+        "valid_time": "2026-02-13T18:00",
+        "metadata": {
+          "n_fronts": 0,
+          "n_cold": 0,
+          "n_warm": 0,
+          "n_occluded": 0,
+          "total_length_deg": 0.0
+        },
+        "front_ids": [],
+        "n_fronts": 0,
+        "n_secondary_centers": 0
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -74.5,
+          51.5
+        ]
+      },
+      "properties": {
+        "system_id": "L_021",
+        "center_lat": 51.5,
+        "center_lon": -74.5,
+        "center_pressure": 1006.4367065429688,
+        "center_type": "L",
+        "is_primary": true,
+        "name": "",
+        "valid_time": "2026-02-13T18:00",
+        "metadata": {
+          "n_fronts": 0,
+          "n_cold": 0,
+          "n_warm": 0,
+          "n_occluded": 0,
+          "total_length_deg": 0.0
+        },
+        "front_ids": [],
+        "n_fronts": 0,
+        "n_secondary_centers": 0
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          19.75,
+          13.75
+        ]
+      },
+      "properties": {
+        "system_id": "L_022",
+        "center_lat": 13.75,
+        "center_lon": 19.75,
+        "center_pressure": 1007.0938720703125,
+        "center_type": "L",
+        "is_primary": true,
+        "name": "",
+        "valid_time": "2026-02-13T18:00",
+        "metadata": {
+          "n_fronts": 0,
+          "n_cold": 0,
+          "n_warm": 0,
+          "n_occluded": 0,
+          "total_length_deg": 0.0
+        },
+        "front_ids": [],
+        "n_fronts": 0,
+        "n_secondary_centers": 0
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          36.0,
+          13.75
+        ]
+      },
+      "properties": {
+        "system_id": "L_023",
+        "center_lat": 13.75,
+        "center_lon": 36.0,
+        "center_pressure": 1007.1934204101562,
+        "center_type": "L",
+        "is_primary": true,
+        "name": "",
+        "valid_time": "2026-02-13T18:00",
+        "metadata": {
+          "n_fronts": 0,
+          "n_cold": 0,
+          "n_warm": 0,
+          "n_occluded": 0,
+          "total_length_deg": 0.0
+        },
+        "front_ids": [],
+        "n_fronts": 0,
+        "n_secondary_centers": 1
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -1.0,
+          13.75
+        ]
+      },
+      "properties": {
+        "system_id": "L_024",
+        "center_lat": 13.75,
+        "center_lon": -1.0,
+        "center_pressure": 1008.0093383789062,
+        "center_type": "L",
+        "is_primary": true,
+        "name": "",
+        "valid_time": "2026-02-13T18:00",
+        "metadata": {
+          "n_fronts": 0,
+          "n_cold": 0,
+          "n_warm": 0,
+          "n_occluded": 0,
+          "total_length_deg": 0.0
+        },
+        "front_ids": [],
+        "n_fronts": 0,
+        "n_secondary_centers": 0
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -11.25,
+          13.75
+        ]
+      },
+      "properties": {
+        "system_id": "L_025",
+        "center_lat": 13.75,
+        "center_lon": -11.25,
+        "center_pressure": 1008.7368774414062,
+        "center_type": "L",
+        "is_primary": true,
+        "name": "",
+        "valid_time": "2026-02-13T18:00",
+        "metadata": {
+          "n_fronts": 0,
+          "n_cold": 0,
+          "n_warm": 0,
+          "n_occluded": 0,
+          "total_length_deg": 0.0
+        },
+        "front_ids": [],
+        "n_fronts": 0,
+        "n_secondary_centers": 0
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          7.0,
+          18.25
+        ]
+      },
+      "properties": {
+        "system_id": "L_026",
+        "center_lat": 18.25,
+        "center_lon": 7.0,
+        "center_pressure": 1010.4707641601562,
+        "center_type": "L",
+        "is_primary": true,
+        "name": "",
+        "valid_time": "2026-02-13T18:00",
+        "metadata": {
+          "n_fronts": 0,
+          "n_cold": 0,
+          "n_warm": 0,
+          "n_occluded": 0,
+          "total_length_deg": 0.0
+        },
+        "front_ids": [],
+        "n_fronts": 0,
+        "n_secondary_centers": 0
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -36.5,
+          67.5
+        ]
+      },
+      "properties": {
+        "system_id": "L_028",
+        "center_lat": 67.5,
+        "center_lon": -36.5,
+        "center_pressure": 1012.3569946289062,
+        "center_type": "L",
+        "is_primary": true,
+        "name": "",
+        "valid_time": "2026-02-13T18:00",
+        "metadata": {
+          "n_fronts": 0,
+          "n_cold": 0,
+          "n_warm": 0,
+          "n_occluded": 0,
+          "total_length_deg": 0.0
+        },
+        "front_ids": [],
+        "n_fronts": 0,
+        "n_secondary_centers": 1
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -71.75,
+          13.75
+        ]
+      },
+      "properties": {
+        "system_id": "L_029",
+        "center_lat": 13.75,
+        "center_lon": -71.75,
+        "center_pressure": 1012.4069213867188,
+        "center_type": "L",
+        "is_primary": true,
+        "name": "",
+        "valid_time": "2026-02-13T18:00",
+        "metadata": {
+          "n_fronts": 0,
+          "n_cold": 0,
+          "n_warm": 0,
+          "n_occluded": 0,
+          "total_length_deg": 0.0
+        },
+        "front_ids": [],
+        "n_fronts": 0,
+        "n_secondary_centers": 0
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -85.75,
+          60.5
+        ]
+      },
+      "properties": {
+        "system_id": "L_030",
+        "center_lat": 60.5,
+        "center_lon": -85.75,
+        "center_pressure": 1012.5242919921875,
+        "center_type": "L",
+        "is_primary": true,
+        "name": "",
+        "valid_time": "2026-02-13T18:00",
+        "metadata": {
+          "n_fronts": 0,
+          "n_cold": 0,
+          "n_warm": 0,
+          "n_occluded": 0,
+          "total_length_deg": 0.0
+        },
+        "front_ids": [],
+        "n_fronts": 0,
+        "n_secondary_centers": 0
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          37.75,
+          23.5
+        ]
+      },
+      "properties": {
+        "system_id": "L_031",
+        "center_lat": 23.5,
+        "center_lon": 37.75,
+        "center_pressure": 1012.7208251953125,
+        "center_type": "L",
+        "is_primary": true,
+        "name": "",
+        "valid_time": "2026-02-13T18:00",
+        "metadata": {
+          "n_fronts": 0,
+          "n_cold": 0,
+          "n_warm": 0,
+          "n_occluded": 0,
+          "total_length_deg": 0.0
+        },
+        "front_ids": [],
+        "n_fronts": 0,
+        "n_secondary_centers": 0
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -91.25,
+          13.75
+        ]
+      },
+      "properties": {
+        "system_id": "L_032",
+        "center_lat": 13.75,
+        "center_lon": -91.25,
+        "center_pressure": 1013.1353149414062,
+        "center_type": "L",
+        "is_primary": true,
+        "name": "",
+        "valid_time": "2026-02-13T18:00",
+        "metadata": {
+          "n_fronts": 0,
+          "n_cold": 0,
+          "n_warm": 0,
+          "n_occluded": 0,
+          "total_length_deg": 0.0
+        },
+        "front_ids": [],
+        "n_fronts": 0,
+        "n_secondary_centers": 1
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          20.5,
+          22.75
+        ]
+      },
+      "properties": {
+        "system_id": "L_033",
+        "center_lat": 22.75,
+        "center_lon": 20.5,
+        "center_pressure": 1013.304443359375,
+        "center_type": "L",
+        "is_primary": true,
+        "name": "",
+        "valid_time": "2026-02-13T18:00",
+        "metadata": {
+          "n_fronts": 0,
+          "n_cold": 0,
+          "n_warm": 0,
+          "n_occluded": 0,
+          "total_length_deg": 0.0
+        },
+        "front_ids": [],
+        "n_fronts": 0,
+        "n_secondary_centers": 0
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -91.25,
+          69.75
+        ]
+      },
+      "properties": {
+        "system_id": "L_034",
+        "center_lat": 69.75,
+        "center_lon": -91.25,
+        "center_pressure": 1013.3399658203125,
+        "center_type": "L",
+        "is_primary": true,
+        "name": "",
+        "valid_time": "2026-02-13T18:00",
+        "metadata": {
+          "n_fronts": 0,
+          "n_cold": 0,
+          "n_warm": 0,
+          "n_occluded": 0,
+          "total_length_deg": 0.0
+        },
+        "front_ids": [],
+        "n_fronts": 0,
+        "n_secondary_centers": 0
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          55.25,
+          34.75
+        ]
+      },
+      "properties": {
+        "system_id": "L_035",
+        "center_lat": 34.75,
+        "center_lon": 55.25,
+        "center_pressure": 1013.642578125,
+        "center_type": "L",
+        "is_primary": true,
+        "name": "",
+        "valid_time": "2026-02-13T18:00",
+        "metadata": {
+          "n_fronts": 0,
+          "n_cold": 0,
+          "n_warm": 0,
+          "n_occluded": 0,
+          "total_length_deg": 0.0
+        },
+        "front_ids": [],
+        "n_fronts": 0,
+        "n_secondary_centers": 0
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -57.25,
+          72.0
+        ]
+      },
+      "properties": {
+        "system_id": "L_036",
+        "center_lat": 72.0,
+        "center_lon": -57.25,
+        "center_pressure": 1013.9862670898438,
+        "center_type": "L",
+        "is_primary": true,
+        "name": "",
+        "valid_time": "2026-02-13T18:00",
+        "metadata": {
+          "n_fronts": 0,
+          "n_cold": 0,
+          "n_warm": 0,
+          "n_occluded": 0,
+          "total_length_deg": 0.0
+        },
+        "front_ids": [],
+        "n_fronts": 0,
+        "n_secondary_centers": 0
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          58.75,
+          30.25
+        ]
+      },
+      "properties": {
+        "system_id": "L_037",
+        "center_lat": 30.25,
+        "center_lon": 58.75,
+        "center_pressure": 1014.0144653320312,
+        "center_type": "L",
+        "is_primary": true,
+        "name": "",
+        "valid_time": "2026-02-13T18:00",
+        "metadata": {
+          "n_fronts": 0,
+          "n_cold": 0,
+          "n_warm": 0,
+          "n_occluded": 0,
+          "total_length_deg": 0.0
+        },
+        "front_ids": [],
+        "n_fronts": 0,
+        "n_secondary_centers": 0
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          46.5,
+          15.75
+        ]
+      },
+      "properties": {
+        "system_id": "L_038",
+        "center_lat": 15.75,
+        "center_lon": 46.5,
+        "center_pressure": 1014.015869140625,
+        "center_type": "L",
+        "is_primary": true,
+        "name": "",
+        "valid_time": "2026-02-13T18:00",
+        "metadata": {
+          "n_fronts": 0,
+          "n_cold": 0,
+          "n_warm": 0,
+          "n_occluded": 0,
+          "total_length_deg": 0.0
+        },
+        "front_ids": [],
+        "n_fronts": 0,
+        "n_secondary_centers": 0
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -63.25,
+          66.0
+        ]
+      },
+      "properties": {
+        "system_id": "L_039",
+        "center_lat": 66.0,
+        "center_lon": -63.25,
+        "center_pressure": 1014.2117309570312,
+        "center_type": "L",
+        "is_primary": true,
+        "name": "",
+        "valid_time": "2026-02-13T18:00",
+        "metadata": {
+          "n_fronts": 0,
+          "n_cold": 0,
+          "n_warm": 0,
+          "n_occluded": 0,
+          "total_length_deg": 0.0
+        },
+        "front_ids": [],
+        "n_fronts": 0,
+        "n_secondary_centers": 0
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -56.75,
+          13.75
+        ]
+      },
+      "properties": {
+        "system_id": "L_040",
+        "center_lat": 13.75,
+        "center_lon": -56.75,
+        "center_pressure": 1014.6377563476562,
+        "center_type": "L",
+        "is_primary": true,
+        "name": "",
+        "valid_time": "2026-02-13T18:00",
+        "metadata": {
+          "n_fronts": 0,
+          "n_cold": 0,
+          "n_warm": 0,
+          "n_occluded": 0,
+          "total_length_deg": 0.0
+        },
+        "front_ids": [],
+        "n_fronts": 0,
+        "n_secondary_centers": 0
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -30.75,
+          72.0
+        ]
+      },
+      "properties": {
+        "system_id": "L_041",
+        "center_lat": 72.0,
+        "center_lon": -30.75,
+        "center_pressure": 1014.7478637695312,
+        "center_type": "L",
+        "is_primary": true,
+        "name": "",
+        "valid_time": "2026-02-13T18:00",
+        "metadata": {
+          "n_fronts": 0,
+          "n_cold": 0,
+          "n_warm": 0,
+          "n_occluded": 0,
+          "total_length_deg": 0.0
+        },
+        "front_ids": [],
+        "n_fronts": 0,
+        "n_secondary_centers": 0
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          61.25,
+          13.75
+        ]
+      },
+      "properties": {
+        "system_id": "L_043",
+        "center_lat": 13.75,
+        "center_lon": 61.25,
+        "center_pressure": 1015.1521606445312,
+        "center_type": "L",
+        "is_primary": true,
+        "name": "",
+        "valid_time": "2026-02-13T18:00",
+        "metadata": {
+          "n_fronts": 0,
+          "n_cold": 0,
+          "n_warm": 0,
+          "n_occluded": 0,
+          "total_length_deg": 0.0
+        },
+        "front_ids": [],
+        "n_fronts": 0,
+        "n_secondary_centers": 0
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -47.25,
+          13.75
+        ]
+      },
+      "properties": {
+        "system_id": "L_044",
+        "center_lat": 13.75,
+        "center_lon": -47.25,
+        "center_pressure": 1015.4237670898438,
+        "center_type": "L",
+        "is_primary": true,
+        "name": "",
+        "valid_time": "2026-02-13T18:00",
+        "metadata": {
+          "n_fronts": 0,
+          "n_cold": 0,
+          "n_warm": 0,
+          "n_occluded": 0,
+          "total_length_deg": 0.0
+        },
+        "front_ids": [],
+        "n_fronts": 0,
+        "n_secondary_centers": 0
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -25.25,
+          72.0
+        ]
+      },
+      "properties": {
+        "system_id": "L_045",
+        "center_lat": 72.0,
+        "center_lon": -25.25,
+        "center_pressure": 1015.4328002929688,
+        "center_type": "L",
+        "is_primary": true,
+        "name": "",
+        "valid_time": "2026-02-13T18:00",
+        "metadata": {
+          "n_fronts": 0,
+          "n_cold": 0,
+          "n_warm": 0,
+          "n_occluded": 0,
+          "total_length_deg": 0.0
+        },
+        "front_ids": [],
+        "n_fronts": 0,
+        "n_secondary_centers": 0
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          51.25,
+          13.75
+        ]
+      },
+      "properties": {
+        "system_id": "L_046",
+        "center_lat": 13.75,
+        "center_lon": 51.25,
+        "center_pressure": 1015.4376831054688,
+        "center_type": "L",
+        "is_primary": true,
+        "name": "",
+        "valid_time": "2026-02-13T18:00",
+        "metadata": {
+          "n_fronts": 0,
+          "n_cold": 0,
+          "n_warm": 0,
+          "n_occluded": 0,
+          "total_length_deg": 0.0
+        },
+        "front_ids": [],
+        "n_fronts": 0,
+        "n_secondary_centers": 0
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          61.25,
+          36.0
+        ]
+      },
+      "properties": {
+        "system_id": "L_047",
+        "center_lat": 36.0,
+        "center_lon": 61.25,
+        "center_pressure": 1015.5337524414062,
+        "center_type": "L",
+        "is_primary": true,
+        "name": "",
+        "valid_time": "2026-02-13T18:00",
+        "metadata": {
+          "n_fronts": 0,
+          "n_cold": 0,
+          "n_warm": 0,
+          "n_occluded": 0,
+          "total_length_deg": 0.0
+        },
+        "front_ids": [],
+        "n_fronts": 0,
+        "n_secondary_centers": 0
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -37.75,
+          13.75
+        ]
+      },
+      "properties": {
+        "system_id": "L_048",
+        "center_lat": 13.75,
+        "center_lon": -37.75,
+        "center_pressure": 1015.7557983398438,
+        "center_type": "L",
+        "is_primary": true,
+        "name": "",
+        "valid_time": "2026-02-13T18:00",
+        "metadata": {
+          "n_fronts": 0,
+          "n_cold": 0,
+          "n_warm": 0,
+          "n_occluded": 0,
+          "total_length_deg": 0.0
+        },
+        "front_ids": [],
+        "n_fronts": 0,
+        "n_secondary_centers": 0
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          58.25,
+          25.25
+        ]
+      },
+      "properties": {
+        "system_id": "L_049",
+        "center_lat": 25.25,
+        "center_lon": 58.25,
+        "center_pressure": 1015.7709350585938,
+        "center_type": "L",
+        "is_primary": true,
+        "name": "",
+        "valid_time": "2026-02-13T18:00",
+        "metadata": {
+          "n_fronts": 0,
+          "n_cold": 0,
+          "n_warm": 0,
+          "n_occluded": 0,
+          "total_length_deg": 0.0
+        },
+        "front_ids": [],
+        "n_fronts": 0,
+        "n_secondary_centers": 0
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -72.0,
+          72.0
+        ]
+      },
+      "properties": {
+        "system_id": "L_050",
+        "center_lat": 72.0,
+        "center_lon": -72.0,
+        "center_pressure": 1016.1971435546875,
+        "center_type": "L",
+        "is_primary": true,
+        "name": "",
+        "valid_time": "2026-02-13T18:00",
+        "metadata": {
+          "n_fronts": 0,
+          "n_cold": 0,
+          "n_warm": 0,
+          "n_occluded": 0,
+          "total_length_deg": 0.0
+        },
+        "front_ids": [],
+        "n_fronts": 0,
+        "n_secondary_centers": 0
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -73.5,
+          64.0
+        ]
+      },
+      "properties": {
+        "system_id": "L_051",
+        "center_lat": 64.0,
+        "center_lon": -73.5,
+        "center_pressure": 1016.2484130859375,
+        "center_type": "L",
+        "is_primary": true,
+        "name": "",
+        "valid_time": "2026-02-13T18:00",
+        "metadata": {
+          "n_fronts": 0,
+          "n_cold": 0,
+          "n_warm": 0,
+          "n_occluded": 0,
+          "total_length_deg": 0.0
+        },
+        "front_ids": [],
+        "n_fronts": 0,
+        "n_secondary_centers": 0
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -91.25,
+          31.75
+        ]
+      },
+      "properties": {
+        "system_id": "L_053",
+        "center_lat": 31.75,
+        "center_lon": -91.25,
+        "center_pressure": 1020.72119140625,
+        "center_type": "L",
+        "is_primary": true,
+        "name": "",
+        "valid_time": "2026-02-13T18:00",
+        "metadata": {
+          "n_fronts": 0,
+          "n_cold": 0,
+          "n_warm": 0,
+          "n_occluded": 0,
+          "total_length_deg": 0.0
+        },
+        "front_ids": [],
+        "n_fronts": 0,
+        "n_secondary_centers": 0
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            38.754578,
+            58.289044
+          ],
+          [
+            49.522658,
+            59.152953
+          ],
+          [
+            60.509977,
+            59.177361
+          ]
+        ]
+      },
+      "properties": {
+        "id": "tfp_000",
+        "front_type": "warm",
+        "unassociated": true
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            -72.505376,
+            35.400881
+          ],
+          [
+            -70.366648,
+            36.839123
+          ],
+          [
+            -67.832891,
+            37.701616
+          ],
+          [
+            -57.543432,
+            38.745139
+          ]
+        ]
+      },
+      "properties": {
+        "id": "tfp_001",
+        "front_type": "cold",
+        "unassociated": true
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            -33.317201,
+            59.252895
+          ],
+          [
+            -27.425637,
+            52.059613
+          ],
+          [
+            -24.215124,
+            49.198083
+          ]
+        ]
+      },
+      "properties": {
+        "id": "tfp_002",
+        "front_type": "warm",
+        "unassociated": true
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            -10.083661,
+            43.33835
+          ],
+          [
+            -8.488178,
+            45.041429
+          ],
+          [
+            -5.950392,
+            51.30382
+          ],
+          [
+            -4.398022,
+            52.205413
+          ],
+          [
+            -1.904234,
+            52.163238
+          ]
+        ]
+      },
+      "properties": {
+        "id": "tfp_003",
+        "front_type": "cold",
+        "unassociated": true
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            -24.520873,
+            14.76674
+          ],
+          [
+            -19.93185,
+            15.387033
+          ],
+          [
+            -12.011028,
+            15.5705
+          ]
+        ]
+      },
+      "properties": {
+        "id": "tfp_004",
+        "front_type": "cold",
+        "unassociated": true
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            -88.924871,
+            33.580224
+          ],
+          [
+            -83.207835,
+            29.500103
+          ],
+          [
+            -81.303151,
+            29.376282
+          ],
+          [
+            -79.381001,
+            30.320744
+          ]
+        ]
+      },
+      "properties": {
+        "id": "tfp_005",
+        "front_type": "cold",
+        "unassociated": true
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            -38.85108,
+            14.684781
+          ],
+          [
+            -37.047581,
+            15.066991
+          ],
+          [
+            -32.819508,
+            17.444485
+          ],
+          [
+            -31.392421,
+            17.417672
+          ],
+          [
+            -30.068257,
+            16.703035
+          ]
+        ]
+      },
+      "properties": {
+        "id": "tfp_006",
+        "front_type": "occluded",
+        "unassociated": true
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            46.200756,
+            71.226619
+          ],
+          [
+            49.37643,
+            70.412129
+          ],
+          [
+            55.528712,
+            70.656382
+          ]
+        ]
+      },
+      "properties": {
+        "id": "tfp_007",
+        "front_type": "cold",
+        "unassociated": true
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            18.006784,
+            55.709739
+          ],
+          [
+            21.73249,
+            56.836589
+          ],
+          [
+            26.252065,
+            57.295729
+          ]
+        ]
+      },
+      "properties": {
+        "id": "tfp_008",
+        "front_type": "cold",
+        "unassociated": true
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            -79.44901,
+            53.270716
+          ],
+          [
+            -78.70265,
+            51.978539
+          ],
+          [
+            -77.362885,
+            51.082539
+          ],
+          [
+            -73.286516,
+            50.57573
+          ]
+        ]
+      },
+      "properties": {
+        "id": "tfp_009",
+        "front_type": "cold",
+        "unassociated": true
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            -90.500541,
+            68.802803
+          ],
+          [
+            -88.132245,
+            68.501503
+          ],
+          [
+            -84.25688,
+            68.96875
+          ]
+        ]
+      },
+      "properties": {
+        "id": "tfp_010",
+        "front_type": "warm",
+        "unassociated": true
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            4.633422,
+            43.280097
+          ],
+          [
+            7.072842,
+            43.014669
+          ],
+          [
+            9.49735,
+            40.520217
+          ]
+        ]
+      },
+      "properties": {
+        "id": "tfp_011",
+        "front_type": "warm",
+        "unassociated": true
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            14.060901,
+            71.216074
+          ],
+          [
+            15.664009,
+            68.737345
+          ],
+          [
+            15.725402,
+            67.148496
+          ]
+        ]
+      },
+      "properties": {
+        "id": "tfp_012",
+        "front_type": "occluded",
+        "unassociated": true
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            18.271253,
+            14.511143
+          ],
+          [
+            19.792145,
+            15.850123
+          ],
+          [
+            22.236365,
+            16.157439
+          ]
+        ]
+      },
+      "properties": {
+        "id": "tfp_013",
+        "front_type": "occluded",
+        "unassociated": true
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            -67.25737,
+            16.693002
+          ],
+          [
+            -65.250397,
+            16.032137
+          ],
+          [
+            -64.423843,
+            14.470111
+          ]
+        ]
+      },
+      "properties": {
+        "id": "tfp_014",
+        "front_type": "occluded",
+        "unassociated": true
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            -7.770048,
+            25.848261
+          ],
+          [
+            -6.687504,
+            27.279106
+          ],
+          [
+            -7.196051,
+            28.753526
+          ]
+        ]
+      },
+      "properties": {
+        "id": "tfp_015",
+        "front_type": "cold",
+        "unassociated": true
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            40.622299,
+            41.006087
+          ],
+          [
+            41.073377,
+            42.357851
+          ],
+          [
+            40.932859,
+            44.249403
+          ]
+        ]
+      },
+      "properties": {
+        "id": "tfp_016",
+        "front_type": "cold",
+        "unassociated": true
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            -89.502959,
+            21.751475
+          ],
+          [
+            -87.788359,
+            20.956739
+          ],
+          [
+            -87.581433,
+            19.704257
+          ]
+        ]
+      },
+      "properties": {
+        "id": "tfp_017",
+        "front_type": "cold",
+        "unassociated": true
+      }
+    }
+  ]
+}
