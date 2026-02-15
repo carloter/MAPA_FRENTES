@@ -72,6 +72,25 @@
     }
     @keyframes spin { to { transform: rotate(360deg); } }
 
+    #toolbar button.active-mode { background: #c0392b; border-color: #e74c3c; color: #fff; }
+
+    .color-legend {
+      position: absolute; bottom: 8px; left: 8px; z-index: 800;
+      background: rgba(0,0,0,0.72); border-radius: 4px; padding: 4px 6px;
+      font-size: 9px; color: #eee; pointer-events: none;
+      max-width: 140px; line-height: 1.3;
+    }
+    .color-legend .cl-bar {
+      width: 100%; height: 8px; border-radius: 2px; margin: 2px 0;
+    }
+    .color-legend .cl-labels {
+      display: flex; justify-content: space-between; font-size: 8px;
+    }
+    .color-legend .cl-title {
+      font-size: 9px; font-weight: 600; white-space: nowrap;
+      overflow: hidden; text-overflow: ellipsis;
+    }
+
     /* WMO symbol markers: no shadow, no default icon styles, allow rotation overflow */
     .wmo-symbol { background: none !important; border: none !important; overflow: visible !important; }
   </style>
@@ -114,7 +133,7 @@
 
   <button id="btn-save" disabled>Guardar</button>
   <button id="btn-flip" disabled title="Invertir simbolos de todos los frentes">Invertir</button>
-  <button id="btn-clear-fronts" class="danger" disabled>Borrar frentes</button>
+  <button id="btn-delete-mode" disabled title="Activar modo borrar: click en un frente para eliminarlo">Borrar</button>
   <div class="spacer"></div>
   <span id="status">Listo</span>
 </div>
@@ -364,6 +383,8 @@ var dataLoaded = false;
 var availableFields = null;
 var coastlineData = null;
 var masterFronts = { type: "FeatureCollection", features: [] };
+var deleteMode = false;
+var colorLegends = [];  // DOM elements per panel
 
 // ==========================================================================
 // UI helpers
@@ -375,7 +396,7 @@ function setButtonsEnabled(loaded) {
   document.getElementById("btn-detect").disabled = !loaded;
   document.getElementById("btn-save").disabled = !loaded;
   document.getElementById("btn-flip").disabled = !loaded;
-  document.getElementById("btn-clear-fronts").disabled = !loaded;
+  document.getElementById("btn-delete-mode").disabled = !loaded;
 }
 
 function getSelectedFrontType() {
@@ -434,12 +455,21 @@ function renderFrontsOnAllPanels() {
       // Draw the line
       var line = L.polyline(latlngs, frontLineStyle(ft)).addTo(group);
 
-      // Click to flip symbol direction on this front
+      // Click behavior depends on mode
       line.on("click", function(e) {
         L.DomEvent.stopPropagation(e);
-        feature.properties.flip = !feature.properties.flip;
-        renderFrontsOnAllPanels();
-        setStatus("Simbolos invertidos (" + ft + ")");
+        if (deleteMode) {
+          // Delete this front
+          var idx = masterFronts.features.indexOf(feature);
+          if (idx >= 0) masterFronts.features.splice(idx, 1);
+          renderFrontsOnAllPanels();
+          setStatus("Frente eliminado");
+        } else {
+          // Flip symbol direction
+          feature.properties.flip = !feature.properties.flip;
+          renderFrontsOnAllPanels();
+          setStatus("Simbolos invertidos (" + ft + ")");
+        }
       });
 
       // WMO symbols as div markers
@@ -557,12 +587,14 @@ function _createPanel(idx, mosaic, fieldKeys, fieldLabels) {
   map.on("moveend", function() { syncMaps(idx); });
 
   // Re-render fronts on zoom (symbol sizes depend on zoom)
+  // and refresh field images to rescale colors to viewport
   var _zoomRenderTimeout = null;
   map.on("zoomend", function() {
     if (_zoomRenderTimeout) clearTimeout(_zoomRenderTimeout);
     _zoomRenderTimeout = setTimeout(function() {
       renderFrontsOnAllPanels();
-    }, 200);
+      if (dataLoaded) refreshFieldsForViewport();
+    }, 300);
   });
 
   maps.push(map);
@@ -578,6 +610,7 @@ function rebuildMosaic(cols, rows) {
   coastlineLayers = [];
   frontLayers = [];
   drawControls = [];
+  colorLegends = [];
 
   var mosaic = document.getElementById("mosaic");
   mosaic.innerHTML = "";
@@ -664,15 +697,81 @@ function onPanelFieldChange(panelIdx) {
   loadSingleFieldImage(panelIdx, sel.value);
 }
 
+function _getViewportParams(map) {
+  var b = map.getBounds();
+  return "south=" + b.getSouth().toFixed(2) +
+    "&north=" + b.getNorth().toFixed(2) +
+    "&west=" + b.getWest().toFixed(2) +
+    "&east=" + b.getEast().toFixed(2);
+}
+
+// Matplotlib colormaps approximated as CSS gradients (key subset)
+var CMAP_CSS = {
+  RdYlBu_r: "linear-gradient(to right, #313695, #4575b4, #74add1, #abd9e9, #e0f3f8, #ffffbf, #fee090, #fdae61, #f46d43, #d73027, #a50026)",
+  coolwarm: "linear-gradient(to right, #3b4cc0, #6788ee, #9abbff, #c9d7ef, #edd1c2, #f7a889, #e26952, #b40426)",
+  RdBu_r: "linear-gradient(to right, #053061, #2166ac, #4393c3, #92c5de, #d1e5f0, #f7f7f7, #fddbc7, #f4a582, #d6604d, #b2182b, #67001f)",
+  YlOrRd: "linear-gradient(to right, #ffffcc, #ffeda0, #fed976, #feb24c, #fd8d3c, #fc4e2a, #e31a1c, #b10026)",
+  viridis: "linear-gradient(to right, #440154, #482777, #3e4989, #31688e, #26828e, #1f9e89, #35b779, #6ece58, #b5de2b, #fde725)",
+  BrBG: "linear-gradient(to right, #543005, #8c510a, #bf812d, #dfc27d, #f6e8c3, #f5f5f5, #c7eae5, #80cdc1, #35978f, #01665e, #003c30)",
+  hot_r: "linear-gradient(to right, #ffffff, #ffff00, #ff8800, #ff0000, #880000, #000000)",
+  Blues: "linear-gradient(to right, #f7fbff, #deebf7, #c6dbef, #9ecae1, #6baed6, #4292c6, #2171b5, #084594)",
+  YlGnBu: "linear-gradient(to right, #ffffd9, #edf8b1, #c7e9b4, #7fcdbb, #41b6c4, #1d91c0, #225ea8, #0c2c84)",
+  bwr: "linear-gradient(to right, #0000ff, #4444ff, #8888ff, #ccccff, #ffffff, #ffcccc, #ff8888, #ff4444, #ff0000)",
+  PiYG_r: "linear-gradient(to right, #276419, #4d9221, #7fbc41, #b8e186, #e6f5d0, #f7f7f7, #fde0ef, #f1b6da, #de77ae, #c51b7d, #8e0152)",
+};
+
+function _cmapToCSS(cmapName) {
+  return CMAP_CSS[cmapName] || CMAP_CSS.viridis;
+}
+
+function _formatValue(v) {
+  var abs = Math.abs(v);
+  if (abs === 0) return "0";
+  if (abs >= 1000) return v.toFixed(0);
+  if (abs >= 10) return v.toFixed(1);
+  if (abs >= 0.1) return v.toFixed(2);
+  return v.toExponential(1);
+}
+
+function updateColorLegend(panelIdx, info) {
+  var panel = document.querySelectorAll(".panel")[panelIdx];
+  if (!panel) return;
+
+  // Remove existing legend
+  var existing = panel.querySelector(".color-legend");
+  if (existing) existing.remove();
+
+  if (!info) return;
+
+  var div = document.createElement("div");
+  div.className = "color-legend";
+  div.innerHTML =
+    '<div class="cl-title">' + info.label + ' (' + info.units + ')</div>' +
+    '<div class="cl-bar" style="background:' + _cmapToCSS(info.cmap) + '"></div>' +
+    '<div class="cl-labels"><span>' + _formatValue(info.vmin) + '</span><span>' + _formatValue(info.vmax) + '</span></div>';
+  panel.appendChild(div);
+}
+
 async function loadSingleFieldImage(idx, fieldName) {
+  var map = maps[idx];
+  var vp = _getViewportParams(map);
   var timestamp = Date.now();
-  var url = "/api/fields/" + fieldName + "/image?t=" + timestamp;
-  if (fieldOverlays[idx]) maps[idx].removeLayer(fieldOverlays[idx]);
+  var url = "/api/fields/" + fieldName + "/image?" + vp + "&t=" + timestamp;
+  if (fieldOverlays[idx]) map.removeLayer(fieldOverlays[idx]);
   var overlay = L.imageOverlay(url, dataBounds, {
     opacity: 0.65, interactive: false, zIndex: 100,
   });
-  overlay.addTo(maps[idx]);
+  overlay.addTo(map);
   fieldOverlays[idx] = overlay;
+
+  // Fetch colorbar info
+  try {
+    var cbResp = await fetch("/api/fields/" + fieldName + "/colorbar?" + vp);
+    if (cbResp.ok) {
+      var cbInfo = await cbResp.json();
+      updateColorLegend(idx, cbInfo);
+    }
+  } catch (e) { /* ignore */ }
 }
 
 var _syncing = false;
@@ -770,21 +869,22 @@ function updatePanelDropdowns() {
 // Field images
 // ==========================================================================
 async function loadFieldImages() {
-  var timestamp = Date.now();
   var selectors = document.querySelectorAll(".panel-field-select");
+  var promises = [];
 
   for (var i = 0; i < maps.length; i++) {
     var fieldName = selectors[i] ? selectors[i].value : DEFAULT_FIELDS[i % DEFAULT_FIELDS.length];
-    var url = "/api/fields/" + fieldName + "/image?t=" + timestamp;
-
-    if (fieldOverlays[i]) maps[i].removeLayer(fieldOverlays[i]);
-
-    var overlay = L.imageOverlay(url, dataBounds, {
-      opacity: 0.65, interactive: false, zIndex: 100,
-    });
-    overlay.addTo(maps[i]);
-    fieldOverlays[i] = overlay;
+    promises.push(loadSingleFieldImage(i, fieldName));
   }
+  await Promise.all(promises);
+}
+
+var _refreshFieldsTimeout = null;
+function refreshFieldsForViewport() {
+  if (_refreshFieldsTimeout) clearTimeout(_refreshFieldsTimeout);
+  _refreshFieldsTimeout = setTimeout(function() {
+    loadFieldImages();
+  }, 400);
 }
 
 // ==========================================================================
@@ -908,10 +1008,16 @@ function flipAllFronts() {
   setStatus("Simbolos invertidos");
 }
 
-function clearFronts() {
-  masterFronts = { type: "FeatureCollection", features: [] };
-  renderFrontsOnAllPanels();
-  setStatus("Frentes borrados");
+function toggleDeleteMode() {
+  deleteMode = !deleteMode;
+  var btn = document.getElementById("btn-delete-mode");
+  if (deleteMode) {
+    btn.classList.add("active-mode");
+    setStatus("Modo borrar activo: click en un frente para eliminarlo");
+  } else {
+    btn.classList.remove("active-mode");
+    setStatus("Modo borrar desactivado");
+  }
 }
 
 // ==========================================================================
@@ -921,7 +1027,7 @@ document.getElementById("btn-load").addEventListener("click", loadData);
 document.getElementById("btn-detect").addEventListener("click", detectFronts);
 document.getElementById("btn-save").addEventListener("click", saveFronts);
 document.getElementById("btn-flip").addEventListener("click", flipAllFronts);
-document.getElementById("btn-clear-fronts").addEventListener("click", clearFronts);
+document.getElementById("btn-delete-mode").addEventListener("click", toggleDeleteMode);
 
 document.getElementById("layout-select").addEventListener("change", function() {
   var layout = parseLayout();

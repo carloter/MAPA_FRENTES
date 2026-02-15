@@ -17,9 +17,9 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import matplotlib.colors as mcolors
 
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 import uvicorn
 
 # Asegurar que mapa_frentes es importable
@@ -52,6 +52,7 @@ class SessionState:
         self.centers = []
         self.fronts = FrontCollection()
         self.field_cache: dict[str, bytes] = {}
+        self.derived_cache: dict[str, DerivedField] = {}
         self.isobar_geojson = None
         self.date_info = ""
 
@@ -72,16 +73,45 @@ def _extract_coords():
     state.lons = ds[lon_name].values
 
 
+def _compute_viewport_range(
+    data: np.ndarray,
+    lats: np.ndarray,
+    lons: np.ndarray,
+    south: float | None,
+    north: float | None,
+    west: float | None,
+    east: float | None,
+) -> tuple[float, float]:
+    """Calcula vmin/vmax del campo restringido al viewport visible."""
+    if south is None or north is None or west is None or east is None:
+        return float(np.nanmin(data)), float(np.nanmax(data))
+
+    lat_mask = (lats >= south) & (lats <= north)
+    lon_mask = (lons >= west) & (lons <= east)
+
+    if not np.any(lat_mask) or not np.any(lon_mask):
+        return float(np.nanmin(data)), float(np.nanmax(data))
+
+    subset = data[np.ix_(lat_mask, lon_mask)]
+    if subset.size == 0 or np.all(np.isnan(subset)):
+        return float(np.nanmin(data)), float(np.nanmax(data))
+
+    return float(np.nanmin(subset)), float(np.nanmax(subset))
+
+
 def _render_field_png(
     derived: DerivedField,
     lats: np.ndarray,
     lons: np.ndarray,
     width_px: int = 900,
+    vmin: float | None = None,
+    vmax: float | None = None,
 ) -> bytes:
     """Renderiza un DerivedField como PNG transparente sin basemap.
 
     El PNG cubre exactamente [lons.min(), lons.max()] x [lats.min(), lats.max()]
     para alinearse con L.imageOverlay en Leaflet.
+    Si se pasan vmin/vmax, se usan para la escala de color.
     """
     aspect = len(lats) / len(lons)
     height_px = int(width_px * aspect)
@@ -93,8 +123,11 @@ def _render_field_png(
     lon2d, lat2d = np.meshgrid(lons, lats)
     data = derived.data
     num_levels = 20
-    vmin = float(np.nanmin(data))
-    vmax = float(np.nanmax(data))
+
+    if vmin is None:
+        vmin = float(np.nanmin(data))
+    if vmax is None:
+        vmax = float(np.nanmax(data))
 
     if derived.center_zero:
         abs_max = max(abs(vmin), abs(vmax))
@@ -118,6 +151,16 @@ def _render_field_png(
     plt.close(fig)
     buf.seek(0)
     return buf.read()
+
+
+def _get_derived(field_name: str) -> DerivedField | None:
+    """Obtiene campo derivado con cache."""
+    if field_name in state.derived_cache:
+        return state.derived_cache[field_name]
+    derived = compute_derived_field(state.ds, field_name, state.lats, state.lons)
+    if derived is not None:
+        state.derived_cache[field_name] = derived
+    return derived
 
 
 def _extract_isobar_geojson() -> dict:
@@ -212,6 +255,7 @@ async def load_data(request: Request):
 
     # Invalidar caches
     state.field_cache.clear()
+    state.derived_cache.clear()
     state.isobar_geojson = None
     state.fronts = FrontCollection()
 
@@ -253,28 +297,80 @@ async def get_bounds():
 
 
 @app.get("/api/fields/{field_name}/image")
-async def get_field_image(field_name: str):
-    """Devuelve PNG transparente de un campo derivado."""
+async def get_field_image(
+    field_name: str,
+    south: float | None = Query(None),
+    north: float | None = Query(None),
+    west: float | None = Query(None),
+    east: float | None = Query(None),
+):
+    """Devuelve PNG transparente de un campo derivado.
+
+    Si se pasan south/north/west/east, la escala de color se ajusta
+    al rango de valores dentro del viewport visible.
+    """
     if state.ds is None:
         raise HTTPException(400, "No hay datos cargados. Llame POST /api/load primero.")
     if field_name not in AVAILABLE_FIELDS or field_name == "none":
         raise HTTPException(404, f"Campo desconocido: {field_name}")
 
-    if field_name in state.field_cache:
+    # Con viewport, no usar cache (depende de la vista)
+    has_viewport = south is not None
+    cache_key = field_name if not has_viewport else None
+
+    if cache_key and cache_key in state.field_cache:
         return StreamingResponse(
-            io.BytesIO(state.field_cache[field_name]),
+            io.BytesIO(state.field_cache[cache_key]),
             media_type="image/png",
         )
 
-    derived = compute_derived_field(
-        state.ds, field_name, state.lats, state.lons,
-    )
+    derived = _get_derived(field_name)
     if derived is None:
         raise HTTPException(404, f"No se puede calcular el campo: {field_name}")
 
-    png_bytes = _render_field_png(derived, state.lats, state.lons)
-    state.field_cache[field_name] = png_bytes
+    vmin, vmax = None, None
+    if has_viewport:
+        vmin, vmax = _compute_viewport_range(
+            derived.data, state.lats, state.lons, south, north, west, east,
+        )
+
+    png_bytes = _render_field_png(derived, state.lats, state.lons, vmin=vmin, vmax=vmax)
+    if cache_key:
+        state.field_cache[cache_key] = png_bytes
     return StreamingResponse(io.BytesIO(png_bytes), media_type="image/png")
+
+
+@app.get("/api/fields/{field_name}/colorbar")
+async def get_field_colorbar(
+    field_name: str,
+    south: float | None = Query(None),
+    north: float | None = Query(None),
+    west: float | None = Query(None),
+    east: float | None = Query(None),
+):
+    """Devuelve metadata de la colorbar para un campo: vmin, vmax, label, units, cmap, center_zero."""
+    if state.ds is None:
+        raise HTTPException(400, "No hay datos cargados.")
+    if field_name not in AVAILABLE_FIELDS or field_name == "none":
+        raise HTTPException(404, f"Campo desconocido: {field_name}")
+
+    derived = _get_derived(field_name)
+    if derived is None:
+        raise HTTPException(404, f"No se puede calcular el campo: {field_name}")
+
+    vmin, vmax = _compute_viewport_range(
+        derived.data, state.lats, state.lons, south, north, west, east,
+    )
+
+    return {
+        "field": field_name,
+        "vmin": round(vmin, 4),
+        "vmax": round(vmax, 4),
+        "label": derived.label,
+        "units": derived.units,
+        "cmap": derived.cmap,
+        "center_zero": derived.center_zero,
+    }
 
 
 @app.get("/api/isobars")
