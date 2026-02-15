@@ -15,7 +15,7 @@ from PyQt5.QtGui import QKeySequence
 from mapa_frentes.config import AppConfig, load_config
 from mapa_frentes.fronts.models import FrontCollection, FrontType
 from mapa_frentes.gui.map_widget import MapWidget
-from mapa_frentes.gui.dialogs import DateSelectorDialog, ConfigDialog
+from mapa_frentes.gui.dialogs import DateSelectorDialog, ConfigDialog, MosaicConfigDialog
 
 logger = logging.getLogger(__name__)
 
@@ -175,15 +175,33 @@ class MainWindow(QMainWindow):
         self.bg_combo = QComboBox()
         self.bg_combo.addItem("Ninguno", "none")
         self.bg_combo.addItem("θe 850 hPa", "theta_e_850")
+        self.bg_combo.addItem("θe 700 hPa", "theta_e_700")
         self.bg_combo.addItem("|∇θe| 850 hPa", "grad_theta_e_850")
+        self.bg_combo.addItem("|∇T| 850 hPa", "grad_t_850")
         self.bg_combo.addItem("Espesor 1000-500", "thickness_1000_500")
         self.bg_combo.addItem("Adv. T 850 hPa", "temp_advection_850")
         self.bg_combo.addItem("Viento 850 hPa", "wind_speed_850")
+        self.bg_combo.addItem("Viento 500 hPa", "wind_speed_500")
+        self.bg_combo.addItem("Vorticidad 850 hPa", "vorticity_850")
+        self.bg_combo.addItem("T 850 hPa", "temp_850")
+        self.bg_combo.addItem("q 850 hPa", "humidity_850")
         self.bg_combo.setToolTip("Campo derivado IFS como fondo del mapa")
         self.bg_combo.currentIndexChanged.connect(self._on_bg_field_changed)
         toolbar.addWidget(self.bg_combo)
         self._cached_bg_field = None   # cache del campo calculado
         self._cached_bg_name = "none"  # nombre del campo en cache
+        self._bg_cache = {}            # cache multi-campo para mosaico
+
+        toolbar.addSeparator()
+
+        # Mosaico
+        self.act_mosaic = QAction("Mosaico", self)
+        self.act_mosaic.setCheckable(True)
+        self.act_mosaic.setToolTip("Alternar vista mosaico multi-panel")
+        self.act_mosaic.triggered.connect(self._on_toggle_mosaic)
+        toolbar.addAction(self.act_mosaic)
+        self._mosaic_fields = None   # lista de campos del mosaico
+        self._mosaic_layout = (2, 3)  # nrows, ncols
 
         toolbar.addSeparator()
 
@@ -292,10 +310,17 @@ class MainWindow(QMainWindow):
 
     def _on_mouse_move(self, event):
         """Muestra coordenadas lon/lat en la barra de estado."""
-        if event.inaxes == self.map_widget.ax:
-            self.coord_label.setText(
-                f"Lon: {event.xdata:.2f}  Lat: {event.ydata:.2f}"
-            )
+        if event.inaxes is not None and event.inaxes in self.map_widget.get_valid_axes():
+            try:
+                import cartopy.crs as ccrs
+                lon, lat = ccrs.PlateCarree().transform_point(
+                    event.xdata, event.ydata, event.inaxes.projection,
+                )
+                self.coord_label.setText(
+                    f"Lon: {lon:.2f}  Lat: {lat:.2f}"
+                )
+            except Exception:
+                self.coord_label.setText("")
         else:
             self.coord_label.setText("")
 
@@ -330,6 +355,7 @@ class MainWindow(QMainWindow):
         self.ds = ds
         self._cached_bg_field = None  # invalidar cache de campo de fondo
         self._cached_bg_name = "none"
+        self._bg_cache.clear()        # invalidar cache mosaico
         self.act_download.setEnabled(True)
         self.act_detect.setEnabled(True)
         self.progress_bar.setVisible(False)
@@ -535,6 +561,31 @@ class MainWindow(QMainWindow):
         self._cached_bg_name = "none"
         self._refresh_map()
 
+    def _on_toggle_mosaic(self, checked):
+        """Alterna entre vista unica y mosaico."""
+        if checked:
+            from mapa_frentes.analysis.derived_fields import AVAILABLE_FIELDS
+            dlg = MosaicConfigDialog(
+                AVAILABLE_FIELDS,
+                current_selection=self._mosaic_fields,
+                parent=self,
+            )
+            if dlg.exec_() != dlg.Accepted:
+                self.act_mosaic.setChecked(False)
+                return
+            self._mosaic_fields = dlg.get_field_names()
+            self._mosaic_layout = dlg.get_layout()
+            nrows, ncols = self._mosaic_layout
+            self.map_widget.switch_to_mosaic(
+                self._mosaic_fields, nrows, ncols,
+            )
+            self._bg_cache.clear()
+            self._refresh_mosaic()
+        else:
+            self.map_widget.switch_to_single()
+            self._original_ax_pos = self.map_widget.ax.get_position()
+            self._refresh_map()
+
     def _get_bg_field(self, field_name, lats, lons):
         """Obtiene campo de fondo con cache para evitar recalcular."""
         if self._cached_bg_name == field_name and self._cached_bg_field is not None:
@@ -628,6 +679,10 @@ class MainWindow(QMainWindow):
 
     def _refresh_map(self):
         """Redibuja el mapa completo con isobaras y frentes."""
+        if self.map_widget.mosaic_mode:
+            self._refresh_mosaic()
+            return
+
         ax = self.map_widget.ax
         # Limpiar artistas previos (mantener fondo cartopy)
         # Guardamos la extent actual antes de limpiar
@@ -756,6 +811,83 @@ class MainWindow(QMainWindow):
         # Dejar espacio inferior para la leyenda
         ax.figure.subplots_adjust(bottom=0.10)
         self.map_widget.redraw()
+
+    def _refresh_mosaic(self):
+        """Redibuja todos los paneles del mosaico."""
+        from mapa_frentes.plotting.map_canvas import apply_base_cartography
+        from mapa_frentes.analysis.derived_fields import AVAILABLE_FIELDS
+
+        msl_smooth = None
+        levels = None
+        lats = lons = None
+
+        if self.ds is not None:
+            from mapa_frentes.analysis.isobars import (
+                smooth_mslp, compute_isobar_levels,
+            )
+            from mapa_frentes.plotting.isobar_renderer import (
+                draw_isobars, draw_pressure_labels, draw_background_field,
+            )
+
+            lat_name = "latitude" if "latitude" in self.ds.coords else "lat"
+            lon_name = "longitude" if "longitude" in self.ds.coords else "lon"
+            lats = self.ds[lat_name].values
+            lons = self.ds[lon_name].values
+
+            msl_smooth = smooth_mslp(
+                self.ds["msl"], sigma=self.cfg.isobars.smooth_sigma,
+            )
+            levels = compute_isobar_levels(
+                msl_smooth, interval=self.cfg.isobars.interval_hpa,
+            )
+
+        highlight = None
+        if self._editor is not None:
+            highlight = self._editor.selected_front_id
+
+        for field_name, ax in self.map_widget.axes_dict.items():
+            ax.clear()
+            apply_base_cartography(ax, self.cfg, lightweight=True)
+
+            if self.ds is not None and lats is not None:
+                # Campo de fondo
+                if field_name != "none":
+                    derived = self._get_bg_field_cached(field_name, lats, lons)
+                    if derived is not None:
+                        draw_background_field(ax, derived, lons, lats, self.cfg)
+
+                # Isobaras
+                draw_isobars(ax, msl_smooth, lons, lats, levels, self.cfg)
+                draw_pressure_labels(ax, self.centers, self.cfg)
+
+            # Frentes (mismos en todos los paneles)
+            if self.fronts and len(self.fronts) > 0:
+                from mapa_frentes.plotting.front_renderer import draw_fronts
+                draw_fronts(ax, self.fronts, self.cfg, highlight_id=highlight)
+
+                if self.assoc_check.isChecked() and self.centers:
+                    from mapa_frentes.plotting.front_renderer import (
+                        draw_association_lines,
+                    )
+                    draw_association_lines(
+                        ax, self.fronts, self.centers, self.cfg,
+                    )
+
+            # Titulo del panel
+            label = AVAILABLE_FIELDS.get(field_name, field_name)
+            ax.set_title(label, fontsize=8, pad=2)
+
+        self.map_widget.redraw()
+
+    def _get_bg_field_cached(self, field_name, lats, lons):
+        """Obtiene campo de fondo con cache multi-campo para mosaico."""
+        if field_name in self._bg_cache:
+            return self._bg_cache[field_name]
+        from mapa_frentes.analysis.derived_fields import compute_derived_field
+        derived = compute_derived_field(self.ds, field_name, lats, lons)
+        if derived is not None:
+            self._bg_cache[field_name] = derived
+        return derived
 
     # --- Centros de presion ---
 

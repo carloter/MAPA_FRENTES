@@ -110,3 +110,95 @@ def create_map_figure(cfg: AppConfig) -> tuple[Figure, plt.Axes]:
     gl.ylocator = MultipleLocator(10)
 
     return fig, ax
+
+
+def apply_base_cartography(ax, cfg: AppConfig, lightweight: bool = False):
+    """Aplica cartografia base a un GeoAxes.
+
+    Args:
+        ax: GeoAxes de Cartopy.
+        cfg: Configuracion.
+        lightweight: Si True, usa resolucion 110m (para mosaico).
+    """
+    plot_cfg = cfg.plotting
+    area = cfg.area
+
+    ax.set_extent(
+        [area.lon_min, area.lon_max, area.lat_min, area.lat_max],
+        crs=ccrs.PlateCarree(),
+    )
+    ax.add_feature(cfeature.OCEAN, facecolor=plot_cfg.ocean_color, zorder=0)
+    ax.add_feature(cfeature.LAND, facecolor=plot_cfg.land_color, zorder=0)
+
+    scale = "110m" if lightweight else "50m"
+    try:
+        ax.add_feature(
+            cfeature.COASTLINE.with_scale(scale),
+            edgecolor=plot_cfg.coastline_color,
+            linewidth=plot_cfg.coastline_linewidth,
+            zorder=1,
+        )
+    except Exception:
+        ax.add_feature(
+            cfeature.COASTLINE,
+            edgecolor=plot_cfg.coastline_color,
+            linewidth=plot_cfg.coastline_linewidth,
+            zorder=1,
+        )
+
+    ax.add_feature(
+        cfeature.BORDERS,
+        edgecolor=plot_cfg.border_color,
+        linewidth=plot_cfg.border_linewidth,
+        linestyle=":",
+        zorder=1,
+    )
+
+
+def create_mosaic_figure(
+    cfg: AppConfig,
+    field_names: list[str],
+    nrows: int = 2,
+    ncols: int = 3,
+) -> tuple[Figure, dict]:
+    """Crea figura con NxM subplots GeoAxes para vista mosaico.
+
+    Args:
+        cfg: Configuracion.
+        field_names: Lista de nombres de campo (uno por panel).
+        nrows: Numero de filas.
+        ncols: Numero de columnas.
+
+    Returns:
+        fig: Figure.
+        axes_dict: dict {field_name: GeoAxes} en orden.
+    """
+    projection = build_projection(cfg)
+    fig, axes_grid = plt.subplots(
+        nrows, ncols,
+        figsize=(cfg.plotting.figsize[0], cfg.plotting.figsize[1]),
+        dpi=max(cfg.plotting.dpi // 2, 72),  # menor DPI para rendimiento
+        subplot_kw={"projection": projection},
+    )
+
+    # Aplanar grid de axes
+    if nrows == 1 and ncols == 1:
+        all_axes = [axes_grid]
+    else:
+        all_axes = axes_grid.flatten()
+
+    axes_dict = {}
+    for i, ax in enumerate(all_axes):
+        if i < len(field_names):
+            name = field_names[i]
+            axes_dict[name] = ax
+            apply_base_cartography(ax, cfg, lightweight=True)
+        else:
+            ax.set_visible(False)
+
+    fig.subplots_adjust(
+        left=0.02, right=0.98, top=0.95, bottom=0.02,
+        wspace=0.05, hspace=0.08,
+    )
+
+    return fig, axes_dict

@@ -276,10 +276,10 @@ def draw_fronts(
 
         flip = getattr(front, "flip_symbols", False)
 
-        # Si tras orientar (centro->fuera) los símbolos aún salen del lado contrario
-        # de forma sistemática, invierte flip (puedes hacerlo por tipo si hace falta):
-        # if front.front_type in (FrontType.COLD, FrontType.WARM, FrontType.OCCLUDED):
-        #     flip = not flip
+        # Frentes fríos: los triángulos deben apuntar hacia el aire cálido.
+        # Con la orientación centro→fuera, MetPy los pone al revés por defecto.
+        if front.front_type == FrontType.COLD:
+            flip = not flip
 
         line, = ax.plot(
             front.lons,

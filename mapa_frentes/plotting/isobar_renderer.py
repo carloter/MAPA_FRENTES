@@ -196,36 +196,32 @@ def draw_background_field(
 
     fig = ax.get_figure()
 
-    # --- Eliminar colorbar anterior si existe (sin tocar el tamaño del mapa) ---
-    if hasattr(fig, "_bg_cbar") and fig._bg_cbar is not None:
+    # --- Eliminar colorbar anterior de ESTE axes si existe ---
+    if hasattr(ax, "_bg_cbar") and ax._bg_cbar is not None:
         try:
-            fig._bg_cbar.remove()
+            ax._bg_cbar.remove()
         except Exception:
             pass
-        fig._bg_cbar = None
+        ax._bg_cbar = None
 
     # --- Crear eje inset para la colorbar (NO encoge el axes principal) ---
-    # Ajusta width/height y bbox si quieres mas/menos grande
-        # --- Crear eje inset para la colorbar (alta, estrecha y pegada al mapa) ---
     cax = inset_axes(
         ax,
-        width="2.1%",           # más estrecha (antes 2.8%)
-        height="92%",           # casi toda la altura (antes 45%)
+        width="2.1%",
+        height="92%",
         loc="lower left",
-        bbox_to_anchor=(1.01, 0.04, 1, 1),  # más cerca (antes 1.02) y más abajo
+        bbox_to_anchor=(1.01, 0.04, 1, 1),
         bbox_transform=ax.transAxes,
         borderpad=0.0,
     )
 
-    fig._bg_cbar = fig.colorbar(cf, cax=cax, orientation="vertical")
+    ax._bg_cbar = fig.colorbar(cf, cax=cax, orientation="vertical")
 
-    # Etiquetas más pequeñas
-    fig._bg_cbar.set_label(f"{derived.label} ({derived.units})", fontsize=7)
-    fig._bg_cbar.ax.tick_params(labelsize=6, length=3)
+    ax._bg_cbar.set_label(f"{derived.label} ({derived.units})", fontsize=7)
+    ax._bg_cbar.ax.tick_params(labelsize=6, length=3)
 
-    # Opcional: quitar decimales en ticks (muy recomendable en mapas operativos)
     try:
-        fig._bg_cbar.ax.yaxis.set_major_formatter("{x:.0f}")
+        ax._bg_cbar.ax.yaxis.set_major_formatter("{x:.0f}")
     except Exception:
         pass
 

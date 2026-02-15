@@ -37,6 +37,7 @@ class FrontEditor:
         self.mw = main_window
         self.canvas = main_window.map_widget.canvas
         self.ax = main_window.map_widget.ax
+        self._active_ax = None  # axes donde se hizo el ultimo click
 
         # Estado
         self.mode = "navigate"
@@ -97,15 +98,23 @@ class FrontEditor:
 
     def _event_to_lonlat(self, event):
         """Convierte coordenadas del evento (en la proyeccion del axes) a lon/lat."""
+        ax = event.inaxes if event.inaxes is not None else self.ax
         return ccrs.PlateCarree().transform_point(
-            event.xdata, event.ydata, self.ax.projection
+            event.xdata, event.ydata, ax.projection
         )
+
+    def _is_valid_axes(self, event):
+        """Comprueba si el evento es en uno de nuestros axes de mapa."""
+        if event.inaxes is None:
+            return False
+        return event.inaxes in self.mw.map_widget.get_valid_axes()
 
     # --- Event handlers ---
 
     def _on_press(self, event):
-        if event.inaxes != self.ax or self.mode == "navigate":
+        if not self._is_valid_axes(event) or self.mode == "navigate":
             return
+        self._active_ax = event.inaxes
         if event.button != 1:  # solo boton izquierdo
             return
 
@@ -130,7 +139,7 @@ class FrontEditor:
             self.mw._refresh_map()
 
     def _on_motion(self, event):
-        if not self._dragging or event.inaxes != self.ax:
+        if not self._dragging or not self._is_valid_axes(event):
             return
         if self._drag_front is None or self._drag_vertex_idx is None:
             return
@@ -317,7 +326,8 @@ class FrontEditor:
 
         Returns "start", "end" o None.
         """
-        transform = ccrs.PlateCarree()._as_mpl_transform(self.ax)
+        ax = self._active_ax or self.ax
+        transform = ccrs.PlateCarree()._as_mpl_transform(ax)
         tolerance = PICK_TOLERANCE_PX * 2
 
         # Extremo inicio
@@ -345,7 +355,8 @@ class FrontEditor:
 
         min_dist = float("inf")
         best_id = None
-        transform = ccrs.PlateCarree()._as_mpl_transform(self.ax)
+        ax = self._active_ax or self.ax
+        transform = ccrs.PlateCarree()._as_mpl_transform(ax)
 
         for front in self.mw.fronts:
             for flon, flat in zip(front.lons, front.lats):
@@ -362,7 +373,8 @@ class FrontEditor:
 
     def _find_nearest_vertex(self, event, front: Front) -> int | None:
         """Encuentra el vertice mas cercano del frente dado."""
-        transform = ccrs.PlateCarree()._as_mpl_transform(self.ax)
+        ax = self._active_ax or self.ax
+        transform = ccrs.PlateCarree()._as_mpl_transform(ax)
         min_dist = float("inf")
         best_idx = None
 
@@ -382,29 +394,31 @@ class FrontEditor:
         from mapa_frentes.plotting.front_renderer import FRONT_STYLES
         style = FRONT_STYLES.get(front.front_type, FRONT_STYLES[FrontType.COLD])
 
+        ax = self._active_ax or self.ax
         if self._highlight_line is not None:
             self._highlight_line.remove()
-        self._highlight_line, = self.ax.plot(
+        self._highlight_line, = ax.plot(
             front.lons, front.lats,
             color=style["color"],
             linewidth=self.mw.cfg.plotting.front_linewidth,
             transform=ccrs.PlateCarree(),
             zorder=10,
         )
-        self.ax.draw_artist(self._highlight_line)
+        ax.draw_artist(self._highlight_line)
 
     def _draw_vertex_markers(self, front: Front):
         """Dibuja los marcadores de vertices."""
+        ax = self._active_ax or self.ax
         if self._vertex_markers is not None:
             self._vertex_markers.remove()
-        self._vertex_markers, = self.ax.plot(
+        self._vertex_markers, = ax.plot(
             front.lons, front.lats,
             "ko",
             markersize=6,
             transform=ccrs.PlateCarree(),
             zorder=11,
         )
-        self.ax.draw_artist(self._vertex_markers)
+        ax.draw_artist(self._vertex_markers)
 
     def _update_add_preview(self):
         """Actualiza la preview del frente en construccion o extension."""
@@ -437,14 +451,15 @@ class FrontEditor:
                 preview_lons = ctx_lons + preview_lons
                 preview_lats = ctx_lats + preview_lats
 
+        ax = self._active_ax or self.ax
         if len(self._adding_points_lons) > 0:
-            self._add_markers, = self.ax.plot(
+            self._add_markers, = ax.plot(
                 self._adding_points_lons, self._adding_points_lats,
                 marker_color, markersize=5,
                 transform=ccrs.PlateCarree(), zorder=10,
             )
         if len(preview_lons) > 1:
-            self._add_line, = self.ax.plot(
+            self._add_line, = ax.plot(
                 preview_lons, preview_lats,
                 line_color, linewidth=2,
                 transform=ccrs.PlateCarree(), zorder=10,
@@ -510,7 +525,8 @@ class FrontEditor:
         if not hasattr(self.mw, "centers") or not self.mw.centers:
             return None
 
-        transform = ccrs.PlateCarree()._as_mpl_transform(self.ax)
+        ax = self._active_ax or self.ax
+        transform = ccrs.PlateCarree()._as_mpl_transform(ax)
         min_dist = float("inf")
         best_center = None
 

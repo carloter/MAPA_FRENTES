@@ -1,4 +1,4 @@
-"""Dialogos de la aplicacion: selector de fecha, configuracion."""
+"""Dialogos de la aplicacion: selector de fecha, configuracion, mosaico."""
 
 from datetime import datetime
 
@@ -6,7 +6,7 @@ from PyQt5.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel,
     QDateTimeEdit, QComboBox, QPushButton, QDialogButtonBox,
     QSpinBox, QDoubleSpinBox, QGroupBox, QFormLayout,
-    QFileDialog, QMessageBox,
+    QFileDialog, QMessageBox, QGridLayout, QRadioButton, QButtonGroup,
 )
 from PyQt5.QtCore import QDateTime, Qt
 
@@ -174,3 +174,151 @@ class ConfigDialog(QDialog):
         self.cfg.tfp.dbscan_eps_deg = self.eps_spin.value()
         self.cfg.isobars.interval_hpa = self.interval_spin.value()
         self.cfg.isobars.smooth_sigma = self.iso_sigma_spin.value()
+
+
+# Presets de campos para el mosaico
+MOSAIC_PRESETS = {
+    "Termodinamico": [
+        "theta_e_850", "theta_e_700", "grad_theta_e_850",
+        "grad_t_850", "thickness_1000_500", "temp_advection_850",
+    ],
+    "Cinematico": [
+        "wind_speed_850", "wind_speed_500", "vorticity_850",
+        "temp_advection_850", "grad_theta_e_850", "thickness_1000_500",
+    ],
+    "Completo": [
+        "theta_e_850", "grad_theta_e_850", "thickness_1000_500",
+        "temp_advection_850", "wind_speed_850", "vorticity_850",
+    ],
+}
+
+
+class MosaicConfigDialog(QDialog):
+    """Dialogo para configurar los paneles del mosaico."""
+
+    def __init__(self, available_fields, current_selection=None, parent=None):
+        """
+        Args:
+            available_fields: dict {clave: etiqueta} de campos disponibles.
+            current_selection: lista de claves actualmente seleccionadas.
+            parent: widget padre.
+        """
+        super().__init__(parent)
+        self.setWindowTitle("Configurar mosaico")
+        self.setMinimumWidth(500)
+
+        self._available = available_fields
+        # Excluir "none" del selector
+        self._field_keys = [k for k in available_fields if k != "none"]
+        self._field_labels = [available_fields[k] for k in self._field_keys]
+
+        layout = QVBoxLayout(self)
+
+        # --- Selector de layout ---
+        layout_group = QGroupBox("Disposicion")
+        layout_h = QHBoxLayout()
+        self._layout_group = QButtonGroup(self)
+
+        self._rb_2x2 = QRadioButton("2x2 (4 paneles)")
+        self._rb_2x3 = QRadioButton("2x3 (6 paneles)")
+        self._rb_3x3 = QRadioButton("3x3 (9 paneles)")
+        self._layout_group.addButton(self._rb_2x2, 0)
+        self._layout_group.addButton(self._rb_2x3, 1)
+        self._layout_group.addButton(self._rb_3x3, 2)
+        self._rb_2x3.setChecked(True)
+
+        layout_h.addWidget(self._rb_2x2)
+        layout_h.addWidget(self._rb_2x3)
+        layout_h.addWidget(self._rb_3x3)
+        layout_group.setLayout(layout_h)
+        layout.addWidget(layout_group)
+
+        self._layout_group.buttonClicked.connect(self._on_layout_changed)
+
+        # --- Presets ---
+        preset_layout = QHBoxLayout()
+        preset_layout.addWidget(QLabel("Preset:"))
+        self._preset_combo = QComboBox()
+        self._preset_combo.addItem("Personalizado")
+        for name in MOSAIC_PRESETS:
+            self._preset_combo.addItem(name)
+        self._preset_combo.currentTextChanged.connect(self._on_preset_changed)
+        preset_layout.addWidget(self._preset_combo)
+        layout.addLayout(preset_layout)
+
+        # --- Grid de combos ---
+        self._combos_group = QGroupBox("Campos por panel")
+        self._combos_layout = QGridLayout()
+        self._combos_group.setLayout(self._combos_layout)
+        layout.addWidget(self._combos_group)
+
+        self._combos = []
+        self._rebuild_combos(2, 3, current_selection)
+
+        # --- Botones ---
+        buttons = QDialogButtonBox(
+            QDialogButtonBox.Ok | QDialogButtonBox.Cancel
+        )
+        buttons.accepted.connect(self.accept)
+        buttons.rejected.connect(self.reject)
+        layout.addWidget(buttons)
+
+    def _rebuild_combos(self, nrows, ncols, selection=None):
+        """Recrea los QComboBox para el layout dado."""
+        # Limpiar combos anteriores
+        for combo in self._combos:
+            self._combos_layout.removeWidget(combo)
+            combo.deleteLater()
+        self._combos.clear()
+
+        # Limpiar labels anteriores
+        while self._combos_layout.count() > 0:
+            item = self._combos_layout.takeAt(0)
+            w = item.widget()
+            if w:
+                w.deleteLater()
+
+        n_panels = nrows * ncols
+        for i in range(n_panels):
+            r = i // ncols
+            c = i % ncols
+            combo = QComboBox()
+            for key, label in zip(self._field_keys, self._field_labels):
+                combo.addItem(label, key)
+            # Seleccionar campo por defecto
+            if selection and i < len(selection):
+                idx = self._field_keys.index(selection[i]) if selection[i] in self._field_keys else i % len(self._field_keys)
+            else:
+                idx = i % len(self._field_keys)
+            combo.setCurrentIndex(idx)
+            self._combos_layout.addWidget(QLabel(f"Panel {i+1}:"), r * 2, c)
+            self._combos_layout.addWidget(combo, r * 2 + 1, c)
+            self._combos.append(combo)
+
+    def _on_layout_changed(self):
+        """Cambia la grid de combos al cambiar layout."""
+        nrows, ncols = self.get_layout()
+        current = self.get_field_names()
+        self._rebuild_combos(nrows, ncols, current)
+
+    def _on_preset_changed(self, text):
+        """Aplica un preset de campos."""
+        if text in MOSAIC_PRESETS:
+            fields = MOSAIC_PRESETS[text]
+            for i, combo in enumerate(self._combos):
+                if i < len(fields) and fields[i] in self._field_keys:
+                    idx = self._field_keys.index(fields[i])
+                    combo.setCurrentIndex(idx)
+
+    def get_layout(self) -> tuple[int, int]:
+        """Devuelve (nrows, ncols) seleccionado."""
+        bid = self._layout_group.checkedId()
+        if bid == 0:
+            return 2, 2
+        elif bid == 2:
+            return 3, 3
+        return 2, 3  # default
+
+    def get_field_names(self) -> list[str]:
+        """Devuelve lista de claves de campo seleccionadas."""
+        return [combo.currentData() for combo in self._combos]
