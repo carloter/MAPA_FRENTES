@@ -1,0 +1,946 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>MAPA_FRENTES Web</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.css" />
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: "Segoe UI", Arial, sans-serif; background: #0a0a1a; color: #e0e0e0; }
+
+    #toolbar {
+      height: 44px; background: #16213e; display: flex;
+      align-items: center; padding: 0 10px; gap: 8px;
+      border-bottom: 2px solid #0f3460; flex-wrap: nowrap;
+      overflow-x: auto;
+    }
+    #toolbar label { color: #8899aa; font-size: 11px; white-space: nowrap; }
+    #toolbar input, #toolbar select {
+      padding: 4px 8px; border-radius: 3px; border: 1px solid #0f3460;
+      background: #1a1a2e; color: #e0e0e0; font-size: 12px;
+    }
+    #toolbar button {
+      padding: 5px 14px; border-radius: 4px; border: 1px solid #0f3460;
+      background: #1a1a2e; color: #e0e0e0; cursor: pointer;
+      font-size: 12px; white-space: nowrap; transition: background 0.2s;
+    }
+    #toolbar button:hover { background: #0f3460; }
+    #toolbar button:disabled { opacity: 0.4; cursor: not-allowed; }
+    #toolbar button.primary { background: #1a5276; border-color: #2980b9; }
+    #toolbar button.primary:hover { background: #2980b9; }
+    #toolbar button.danger { border-color: #c0392b; }
+    #toolbar button.danger:hover { background: #c0392b; }
+    .spacer { flex-grow: 1; }
+    #status { color: #53a653; font-size: 11px; white-space: nowrap; max-width: 350px; overflow: hidden; text-overflow: ellipsis; }
+    .tb-sep { width: 1px; height: 24px; background: #0f3460; flex-shrink: 0; }
+
+    #front-type-swatch {
+      display: inline-block; width: 14px; height: 14px;
+      border-radius: 2px; vertical-align: middle; margin-left: 2px;
+      border: 1px solid #555; background: #0033BB;
+    }
+
+    #mosaic {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      grid-template-rows: repeat(2, 1fr);
+      height: calc(100vh - 44px);
+      gap: 2px; background: #0a0a1a;
+    }
+    .panel { position: relative; background: #1a1a2e; overflow: hidden; }
+    .panel-field-select {
+      position: absolute; top: 4px; left: 4px; z-index: 800;
+      background: rgba(0,0,0,0.75); color: #fff; padding: 2px 6px;
+      font-size: 11px; border-radius: 3px; border: 1px solid #0f3460;
+      cursor: pointer; max-width: 160px;
+    }
+    .panel .leaflet-container { width: 100%; height: 100%; }
+    .leaflet-container { background: #c8dff0 !important; }
+
+    #loading {
+      display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+      background: rgba(0,0,0,0.6); z-index: 10000;
+      justify-content: center; align-items: center;
+    }
+    #loading.active { display: flex; }
+    #loading .spinner {
+      width: 40px; height: 40px; border: 4px solid #333;
+      border-top-color: #2980b9; border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* WMO symbol markers: no shadow, no default icon styles, allow rotation overflow */
+    .wmo-symbol { background: none !important; border: none !important; overflow: visible !important; }
+  </style>
+</head>
+<body>
+
+<div id="toolbar">
+  <label>Fecha:</label>
+  <input type="text" id="date-input" placeholder="YYYYMMDDHH" size="11" title="Ej: 2026021400. Vacio = ultimo disponible" />
+  <label>Step:</label>
+  <select id="step-select">
+    <option value="0" selected>T+000</option>
+    <option value="6">T+006</option>
+    <option value="12">T+012</option>
+    <option value="24">T+024</option>
+    <option value="48">T+048</option>
+    <option value="72">T+072</option>
+  </select>
+  <label>Layout:</label>
+  <select id="layout-select">
+    <option value="2x2">2x2</option>
+    <option value="3x2" selected>3x2</option>
+    <option value="3x3">3x3</option>
+    <option value="4x3">4x3</option>
+  </select>
+  <button id="btn-load" class="primary">Cargar datos</button>
+  <button id="btn-detect" disabled>Detectar frentes</button>
+
+  <div class="tb-sep"></div>
+  <label>Tipo frente:</label>
+  <select id="front-type-select">
+    <option value="cold">Frio</option>
+    <option value="warm">Calido</option>
+    <option value="occluded">Ocluido</option>
+    <option value="stationary">Estacionario</option>
+    <option value="instability_line">Lin. inestabilidad</option>
+  </select>
+  <span id="front-type-swatch"></span>
+  <div class="tb-sep"></div>
+
+  <button id="btn-save" disabled>Guardar</button>
+  <button id="btn-flip" disabled title="Invertir simbolos de todos los frentes">Invertir</button>
+  <button id="btn-clear-fronts" class="danger" disabled>Borrar frentes</button>
+  <div class="spacer"></div>
+  <span id="status">Listo</span>
+</div>
+
+<div id="mosaic"></div>
+<div id="loading"><div class="spinner"></div></div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.js"></script>
+<script>
+// ==========================================================================
+// WMO Front Symbols - Direct SVG markers (no polylineDecorator dependency)
+// ==========================================================================
+
+/**
+ * Compute evenly-spaced sample points along a polyline in pixel space.
+ * Returns array of { latlng, angleDeg } where angleDeg is the line direction.
+ */
+function samplePointsAlongLine(latlngs, spacingPx, map) {
+  if (!latlngs || latlngs.length < 2 || !map) return [];
+
+  // Convert to pixel coords
+  var pts = latlngs.map(function(ll) { return map.latLngToContainerPoint(ll); });
+
+  // Compute cumulative pixel distance
+  var cumDist = [0];
+  for (var i = 1; i < pts.length; i++) {
+    var dx = pts[i].x - pts[i-1].x;
+    var dy = pts[i].y - pts[i-1].y;
+    cumDist.push(cumDist[i-1] + Math.sqrt(dx*dx + dy*dy));
+  }
+  var totalLen = cumDist[cumDist.length - 1];
+  if (totalLen < spacingPx * 0.5) return [];
+
+  // Sample at even intervals starting at spacingPx/2
+  var samples = [];
+  var offset = spacingPx * 0.4;  // first symbol offset
+  var segIdx = 0;
+
+  for (var d = offset; d < totalLen - spacingPx * 0.3; d += spacingPx) {
+    // Find segment containing distance d
+    while (segIdx < cumDist.length - 2 && cumDist[segIdx + 1] < d) segIdx++;
+
+    var segLen = cumDist[segIdx + 1] - cumDist[segIdx];
+    if (segLen < 0.01) continue;
+    var t = (d - cumDist[segIdx]) / segLen;
+
+    // Interpolate position
+    var px = pts[segIdx].x + t * (pts[segIdx + 1].x - pts[segIdx].x);
+    var py = pts[segIdx].y + t * (pts[segIdx + 1].y - pts[segIdx].y);
+
+    // Direction angle (degrees, 0 = right, CW positive for CSS transform)
+    var dx2 = pts[segIdx + 1].x - pts[segIdx].x;
+    var dy2 = pts[segIdx + 1].y - pts[segIdx].y;
+    var angleDeg = Math.atan2(dy2, dx2) * 180 / Math.PI;
+
+    var ll = map.containerPointToLatLng(L.point(px, py));
+    samples.push({ latlng: ll, angleDeg: angleDeg });
+  }
+
+  return samples;
+}
+
+/**
+ * Helper: rotate point (x,y) around origin by angle in radians.
+ */
+function _rot(x, y, cos_a, sin_a) {
+  return [x * cos_a - y * sin_a, x * sin_a + y * cos_a];
+}
+
+/**
+ * Create pre-rotated triangle SVG (no CSS transform needed).
+ * Returns { html, size } where the SVG is a square of side `size`,
+ * symbol centered, already rotated to `angleDeg`.
+ * The anchor point is always the center of the SVG = point on the front line.
+ *
+ * angleDeg: direction the apex should point (screen coords, 0=right, CW positive).
+ * h: height of triangle (apex distance from base center).
+ */
+function makeTriangleSVG(h, color, angleDeg) {
+  var hw = h * 0.4;  // half base width
+  var s = Math.ceil(h * 2) + 4;  // square SVG side
+  var c = s / 2;  // center
+
+  // Unrotated: base at origin, apex pointing UP (angle = -90 deg screen)
+  // Vertices relative to base center (0,0):
+  var verts = [[-hw, 0], [0, -h], [hw, 0]];
+
+  // We want apex to point at angleDeg. Unrotated apex points at -90.
+  // Rotation needed: angleDeg - (-90) = angleDeg + 90
+  var rad = (angleDeg + 90) * Math.PI / 180;
+  var cos_a = Math.cos(rad), sin_a = Math.sin(rad);
+
+  var pts = verts.map(function(v) {
+    var r = _rot(v[0], v[1], cos_a, sin_a);
+    return (c + r[0]).toFixed(1) + ',' + (c + r[1]).toFixed(1);
+  });
+
+  return {
+    html: '<svg width="' + s + '" height="' + s + '" viewBox="0 0 ' + s + ' ' + s + '" xmlns="http://www.w3.org/2000/svg">' +
+      '<polygon points="' + pts.join(' ') + '" fill="' + color + '" stroke="' + color + '" stroke-width="0.5"/></svg>',
+    size: s,
+  };
+}
+
+/**
+ * Create pre-rotated semicircle SVG (no CSS transform needed).
+ * Returns { html, size }.
+ *
+ * angleDeg: direction the bulge should point (screen coords).
+ * r: radius of semicircle.
+ */
+function makeSemicircleSVG(r, color, angleDeg) {
+  if (r < 2) r = 2;
+  var s = Math.ceil(r * 2) + 4;  // square SVG side
+  var c = s / 2;  // center
+
+  // Unrotated: flat edge horizontal at origin, bulge pointing UP (-90 deg)
+  // Points relative to center of flat edge (0,0):
+  var nSeg = 14;
+  var verts = [];
+  for (var i = 0; i <= nSeg; i++) {
+    var t = Math.PI * i / nSeg;  // 0 to PI
+    verts.push([-r * Math.cos(t), -r * Math.sin(t)]);  // bulges UP (negative Y)
+  }
+
+  // Rotate so bulge points at angleDeg (same logic as triangle)
+  var rad = (angleDeg + 90) * Math.PI / 180;
+  var cos_a = Math.cos(rad), sin_a = Math.sin(rad);
+
+  var pts = verts.map(function(v) {
+    var rv = _rot(v[0], v[1], cos_a, sin_a);
+    return (c + rv[0]).toFixed(1) + ',' + (c + rv[1]).toFixed(1);
+  });
+
+  return {
+    html: '<svg width="' + s + '" height="' + s + '" viewBox="0 0 ' + s + ' ' + s + '" xmlns="http://www.w3.org/2000/svg">' +
+      '<polygon points="' + pts.join(' ') + '" fill="' + color + '" stroke="' + color + '" stroke-width="0.5"/></svg>',
+    size: s,
+  };
+}
+
+/**
+ * Place WMO symbol markers along a polyline.
+ * Symbols are pre-rotated SVGs centered on the line point (no CSS transform).
+ *
+ * symbolType: "triangle", "semicircle", "both" (occluded), "stationary"
+ * opts.flip: if true, symbols point to the opposite side
+ */
+function createWMOSymbolMarkers(latlngs, map, symbolType, color, opts) {
+  opts = opts || {};
+  var zoom = map.getZoom();
+  var triH     = (zoom >= 7) ? 18 : (zoom >= 5 ? 14 : 10);
+  var semiR    = (zoom >= 7) ? 9  : (zoom >= 5 ? 7  : 5);
+  var spacing  = (zoom >= 7) ? 50 : (zoom >= 5 ? 40 : 30);
+  var flip = opts.flip || false;
+
+  var samples = samplePointsAlongLine(latlngs, spacing, map);
+  var markers = [];
+
+  samples.forEach(function(sample, idx) {
+    // Direction perpendicular to line, pointing RIGHT of line direction
+    var perpAngle = sample.angleDeg + 90;
+    if (flip) perpAngle += 180;
+
+    var sym, symSize;
+
+    if (symbolType === "triangle") {
+      sym = makeTriangleSVG(triH, color, perpAngle);
+
+    } else if (symbolType === "semicircle") {
+      sym = makeSemicircleSVG(semiR, color, perpAngle);
+
+    } else if (symbolType === "both") {
+      // Occluded: alternate triangle and semicircle
+      if (idx % 2 === 0) {
+        sym = makeTriangleSVG(triH, color, perpAngle);
+      } else {
+        sym = makeSemicircleSVG(semiR, color, perpAngle);
+      }
+
+    } else if (symbolType === "stationary") {
+      // Blue triangles on one side, red semicircles on the opposite
+      if (idx % 2 === 0) {
+        sym = makeTriangleSVG(triH, "#0033BB", perpAngle);
+      } else {
+        sym = makeSemicircleSVG(semiR, "#CC0000", perpAngle + 180);
+      }
+
+    } else {
+      return;
+    }
+
+    symSize = sym.size;
+    var half = symSize / 2;
+
+    var icon = L.divIcon({
+      className: "wmo-symbol",
+      html: sym.html,
+      iconSize: [symSize, symSize],
+      iconAnchor: [half, half],  // center of SVG = point on line
+    });
+
+    markers.push(L.marker(sample.latlng, {
+      icon: icon,
+      interactive: false,
+      pane: "fronts",
+    }));
+  });
+
+  return markers;
+}
+
+// ==========================================================================
+// Config
+// ==========================================================================
+var DEFAULT_FIELDS = [
+  "theta_e_850", "grad_theta_e_850", "temp_advection_850",
+  "wind_speed_850", "vorticity_850", "thickness_1000_500",
+  "theta_e_700", "grad_t_850", "wind_speed_500",
+  "temp_850", "humidity_850", "theta_e_850",
+];
+
+var FRONT_COLORS = {
+  cold: "#0033BB", warm: "#CC0000", occluded: "#8800AA",
+  cold_occluded: "#6600CC", warm_occluded: "#AA0088",
+  warm_seclusion: "#DD0066", stationary: "#006600",
+  instability_line: "#CC4400",
+};
+
+var DEFAULT_CENTER = [45, -15];
+var DEFAULT_ZOOM = 4;
+
+// ==========================================================================
+// State
+// ==========================================================================
+var maps = [];
+var fieldOverlays = [];
+var isobarLayers = [];
+var centerLayers = [];
+var coastlineLayers = [];
+var frontLayers = [];
+var drawControls = [];
+
+var dataBounds = null;
+var dataLoaded = false;
+var availableFields = null;
+var coastlineData = null;
+var masterFronts = { type: "FeatureCollection", features: [] };
+
+// ==========================================================================
+// UI helpers
+// ==========================================================================
+function setStatus(msg) { document.getElementById("status").textContent = msg; }
+function showLoading() { document.getElementById("loading").classList.add("active"); }
+function hideLoading() { document.getElementById("loading").classList.remove("active"); }
+function setButtonsEnabled(loaded) {
+  document.getElementById("btn-detect").disabled = !loaded;
+  document.getElementById("btn-save").disabled = !loaded;
+  document.getElementById("btn-flip").disabled = !loaded;
+  document.getElementById("btn-clear-fronts").disabled = !loaded;
+}
+
+function getSelectedFrontType() {
+  return document.getElementById("front-type-select").value;
+}
+function getSelectedFrontColor() {
+  return FRONT_COLORS[getSelectedFrontType()] || "#0033BB";
+}
+
+// ==========================================================================
+// Front rendering
+// ==========================================================================
+function frontLineStyle(frontType) {
+  var color = FRONT_COLORS[frontType] || "#0033BB";
+  var dashArray = frontType === "instability_line" ? "8 4 2 4" : null;
+  return { color: color, weight: 3, opacity: 0.9, dashArray: dashArray, pane: "fronts" };
+}
+
+/**
+ * Determine WMO symbol type and color for a given front type.
+ */
+function getSymbolConfig(frontType) {
+  switch (frontType) {
+    case "cold":
+    case "cold_occluded":
+      return { symbolType: "triangle", color: FRONT_COLORS[frontType] };
+    case "warm":
+    case "warm_occluded":
+    case "warm_seclusion":
+      return { symbolType: "semicircle", color: FRONT_COLORS[frontType] };
+    case "occluded":
+      return { symbolType: "both", color: FRONT_COLORS.occluded };
+    case "stationary":
+      return { symbolType: "stationary", color: "#006600" };
+    default:
+      return null;  // instability_line: no symbols
+  }
+}
+
+function renderFrontsOnAllPanels() {
+  maps.forEach(function(map, i) {
+    if (frontLayers[i]) {
+      map.removeLayer(frontLayers[i]);
+      frontLayers[i] = null;
+    }
+
+    var group = L.layerGroup().addTo(map);
+
+    (masterFronts.features || []).forEach(function(feature) {
+      var coords = feature.geometry && feature.geometry.coordinates;
+      if (!coords || coords.length < 2) return;
+
+      var latlngs = coords.map(function(c) { return L.latLng(c[1], c[0]); });
+      var ft = (feature.properties && feature.properties.front_type) || "cold";
+
+      // Draw the line
+      var line = L.polyline(latlngs, frontLineStyle(ft)).addTo(group);
+
+      // Click to flip symbol direction on this front
+      line.on("click", function(e) {
+        L.DomEvent.stopPropagation(e);
+        feature.properties.flip = !feature.properties.flip;
+        renderFrontsOnAllPanels();
+        setStatus("Simbolos invertidos (" + ft + ")");
+      });
+
+      // WMO symbols as div markers
+      var symCfg = getSymbolConfig(ft);
+      if (symCfg) {
+        var isFlipped = !!(feature.properties && feature.properties.flip);
+        var markers = createWMOSymbolMarkers(latlngs, map, symCfg.symbolType, symCfg.color, { flip: isFlipped });
+        markers.forEach(function(m) { m.addTo(group); });
+      }
+    });
+
+    frontLayers[i] = group;
+  });
+}
+
+// ==========================================================================
+// Coastlines
+// ==========================================================================
+async function loadCoastlines() {
+  if (coastlineData) return coastlineData;
+  try {
+    var resp = await fetch("/api/coastlines");
+    coastlineData = await resp.json();
+  } catch (e) {
+    console.warn("No se pudieron cargar costas:", e);
+    coastlineData = { type: "FeatureCollection", features: [] };
+  }
+  return coastlineData;
+}
+
+function addCoastlineToMap(map, idx) {
+  if (!coastlineData) return;
+  if (coastlineLayers[idx]) map.removeLayer(coastlineLayers[idx]);
+  coastlineLayers[idx] = L.geoJSON(coastlineData, {
+    pane: "coastlines",
+    style: function(feature) {
+      return {
+        color: feature.properties.layer === "coastline" ? "#222" : "#777",
+        weight: feature.properties.layer === "coastline" ? 1.3 : 0.5,
+        opacity: 0.9,
+        interactive: false,
+      };
+    },
+  }).addTo(map);
+}
+
+// ==========================================================================
+// Build / Rebuild mosaic
+// ==========================================================================
+function parseLayout() {
+  var val = document.getElementById("layout-select").value;
+  var parts = val.split("x").map(Number);
+  return { cols: parts[0], rows: parts[1] };
+}
+
+function _createPanel(idx, mosaic, fieldKeys, fieldLabels) {
+  var panel = document.createElement("div");
+  panel.className = "panel";
+
+  var sel = document.createElement("select");
+  sel.className = "panel-field-select";
+  sel.dataset.panelIdx = idx;
+
+  if (fieldKeys.length > 0) {
+    fieldKeys.forEach(function(key) {
+      var opt = document.createElement("option");
+      opt.value = key;
+      opt.textContent = fieldLabels[key] || key;
+      sel.appendChild(opt);
+    });
+    var defField = DEFAULT_FIELDS[idx % DEFAULT_FIELDS.length];
+    sel.value = fieldKeys.indexOf(defField) >= 0 ? defField : fieldKeys[idx % fieldKeys.length];
+  } else {
+    var opt = document.createElement("option");
+    opt.value = DEFAULT_FIELDS[idx % DEFAULT_FIELDS.length];
+    opt.textContent = opt.value;
+    sel.appendChild(opt);
+  }
+  sel.addEventListener("change", function() { onPanelFieldChange(idx); });
+  panel.appendChild(sel);
+
+  var mapDiv = document.createElement("div");
+  mapDiv.id = "map-" + idx;
+  mapDiv.style.cssText = "width:100%;height:100%";
+  panel.appendChild(mapDiv);
+  mosaic.appendChild(panel);
+
+  var map = L.map("map-" + idx, {
+    center: DEFAULT_CENTER,
+    zoom: DEFAULT_ZOOM,
+    zoomControl: (idx === 0),
+    attributionControl: false,
+  });
+
+  // Custom panes
+  map.createPane("coastlines");
+  map.getPane("coastlines").style.zIndex = 450;
+  map.createPane("fronts");
+  map.getPane("fronts").style.zIndex = 650;
+
+  // Basemap
+  L.tileLayer(
+    "https://{s}.basemaps.cartocdn.com/light_nolabels/{z}/{x}/{y}{r}.png",
+    { opacity: 0.4, maxZoom: 12 }
+  ).addTo(map);
+
+  addCoastlineToMap(map, idx);
+
+  fieldOverlays.push(null);
+  isobarLayers.push(null);
+  centerLayers.push(null);
+  frontLayers.push(null);
+
+  // Sync zoom/pan
+  map.on("moveend", function() { syncMaps(idx); });
+
+  // Re-render fronts on zoom (symbol sizes depend on zoom)
+  var _zoomRenderTimeout = null;
+  map.on("zoomend", function() {
+    if (_zoomRenderTimeout) clearTimeout(_zoomRenderTimeout);
+    _zoomRenderTimeout = setTimeout(function() {
+      renderFrontsOnAllPanels();
+    }, 200);
+  });
+
+  maps.push(map);
+  initDrawOnPanel(idx);
+}
+
+function rebuildMosaic(cols, rows) {
+  maps.forEach(function(m) { m.remove(); });
+  maps = [];
+  fieldOverlays = [];
+  isobarLayers = [];
+  centerLayers = [];
+  coastlineLayers = [];
+  frontLayers = [];
+  drawControls = [];
+
+  var mosaic = document.getElementById("mosaic");
+  mosaic.innerHTML = "";
+  mosaic.style.gridTemplateColumns = "repeat(" + cols + ", 1fr)";
+  mosaic.style.gridTemplateRows = "repeat(" + rows + ", 1fr)";
+
+  var nPanels = cols * rows;
+  var fieldKeys = availableFields ? Object.keys(availableFields) : [];
+  var fieldLabels = availableFields || {};
+
+  for (var i = 0; i < nPanels; i++) {
+    _createPanel(i, mosaic, fieldKeys, fieldLabels);
+  }
+
+  if (dataLoaded) {
+    loadFieldImages();
+    loadIsobars();
+    loadCenters();
+    renderFrontsOnAllPanels();
+  }
+}
+
+function _getDrawShapeOptions() {
+  var ft = getSelectedFrontType();
+  var color = getSelectedFrontColor();
+  var dashArray = ft === "instability_line" ? "8 4 2 4" :
+                  ft === "stationary" ? "6 3" : null;
+  return { color: color, weight: 3, opacity: 0.9, dashArray: dashArray };
+}
+
+function _createDrawControl(shapeOptions) {
+  return new L.Control.Draw({
+    position: "topright",
+    edit: false,
+    draw: {
+      polyline: { shapeOptions: shapeOptions },
+      polygon: false, rectangle: false,
+      circle: false, marker: false, circlemarker: false,
+    },
+  });
+}
+
+function initDrawOnPanel(panelIdx) {
+  var dc = _createDrawControl(_getDrawShapeOptions());
+  maps[panelIdx].addControl(dc);
+  drawControls[panelIdx] = dc;
+
+  maps[panelIdx].on(L.Draw.Event.CREATED, function(e) {
+    var layer = e.layer;
+    var selectedType = getSelectedFrontType();
+    var geojson = layer.toGeoJSON();
+
+    var feature = {
+      type: "Feature",
+      properties: {
+        front_type: selectedType,
+        id: "new_" + Date.now() + "_" + Math.random().toString(36).substr(2, 4)
+      },
+      geometry: geojson.geometry,
+    };
+
+    masterFronts.features.push(feature);
+    renderFrontsOnAllPanels();
+    setStatus("Frente " + selectedType + " dibujado");
+  });
+}
+
+function updateAllDrawOptions() {
+  document.getElementById("front-type-swatch").style.background = getSelectedFrontColor();
+  var shapeOptions = _getDrawShapeOptions();
+
+  maps.forEach(function(map, i) {
+    if (drawControls[i]) map.removeControl(drawControls[i]);
+    var dc = _createDrawControl(shapeOptions);
+    map.addControl(dc);
+    drawControls[i] = dc;
+  });
+}
+
+function onPanelFieldChange(panelIdx) {
+  if (!dataLoaded || !dataBounds) return;
+  var sel = document.querySelector('.panel-field-select[data-panel-idx="' + panelIdx + '"]');
+  if (!sel) return;
+  loadSingleFieldImage(panelIdx, sel.value);
+}
+
+async function loadSingleFieldImage(idx, fieldName) {
+  var timestamp = Date.now();
+  var url = "/api/fields/" + fieldName + "/image?t=" + timestamp;
+  if (fieldOverlays[idx]) maps[idx].removeLayer(fieldOverlays[idx]);
+  var overlay = L.imageOverlay(url, dataBounds, {
+    opacity: 0.65, interactive: false, zIndex: 100,
+  });
+  overlay.addTo(maps[idx]);
+  fieldOverlays[idx] = overlay;
+}
+
+var _syncing = false;
+function syncMaps(sourceIdx) {
+  if (_syncing) return;
+  _syncing = true;
+  var center = maps[sourceIdx].getCenter();
+  var zoom = maps[sourceIdx].getZoom();
+  maps.forEach(function(m, i) {
+    if (i !== sourceIdx) m.setView(center, zoom, { animate: false });
+  });
+  setTimeout(function() { _syncing = false; }, 150);
+}
+
+// ==========================================================================
+// Load data
+// ==========================================================================
+async function loadData() {
+  var dateStr = document.getElementById("date-input").value.trim() || null;
+  var step = parseInt(document.getElementById("step-select").value);
+
+  showLoading();
+  setStatus("Descargando datos ECMWF...");
+
+  try {
+    var resp = await fetch("/api/load", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ date: dateStr, step: step }),
+    });
+    if (!resp.ok) {
+      var err = await resp.json();
+      throw new Error(err.detail || "Error cargando datos");
+    }
+    var data = await resp.json();
+
+    var boundsResp = await fetch("/api/bounds");
+    var boundsData = await boundsResp.json();
+    var db = boundsData.data_bounds;
+    dataBounds = [[db.south, db.west], [db.north, db.east]];
+
+    if (boundsData.fields) {
+      availableFields = boundsData.fields;
+      updatePanelDropdowns();
+    }
+
+    setStatus("Generando capas...");
+
+    await Promise.all([
+      loadFieldImages(),
+      loadIsobars(),
+      loadCenters(),
+    ]);
+
+    dataLoaded = true;
+    setButtonsEnabled(true);
+
+    masterFronts = { type: "FeatureCollection", features: [] };
+    renderFrontsOnAllPanels();
+
+    var dateInfo = boundsData.date_info || "";
+    setStatus("Datos cargados: " + data.n_centers + " centros. " + dateInfo);
+  } catch (e) {
+    setStatus("Error: " + e.message);
+    console.error(e);
+  } finally {
+    hideLoading();
+  }
+}
+
+function updatePanelDropdowns() {
+  if (!availableFields) return;
+  var fieldKeys = Object.keys(availableFields);
+
+  document.querySelectorAll(".panel-field-select").forEach(function(sel) {
+    var currentVal = sel.value;
+    var idx = parseInt(sel.dataset.panelIdx);
+    sel.innerHTML = "";
+    fieldKeys.forEach(function(key) {
+      var opt = document.createElement("option");
+      opt.value = key;
+      opt.textContent = availableFields[key];
+      sel.appendChild(opt);
+    });
+    if (fieldKeys.includes(currentVal)) {
+      sel.value = currentVal;
+    } else {
+      var def = DEFAULT_FIELDS[idx % DEFAULT_FIELDS.length];
+      sel.value = fieldKeys.includes(def) ? def : fieldKeys[0];
+    }
+  });
+}
+
+// ==========================================================================
+// Field images
+// ==========================================================================
+async function loadFieldImages() {
+  var timestamp = Date.now();
+  var selectors = document.querySelectorAll(".panel-field-select");
+
+  for (var i = 0; i < maps.length; i++) {
+    var fieldName = selectors[i] ? selectors[i].value : DEFAULT_FIELDS[i % DEFAULT_FIELDS.length];
+    var url = "/api/fields/" + fieldName + "/image?t=" + timestamp;
+
+    if (fieldOverlays[i]) maps[i].removeLayer(fieldOverlays[i]);
+
+    var overlay = L.imageOverlay(url, dataBounds, {
+      opacity: 0.65, interactive: false, zIndex: 100,
+    });
+    overlay.addTo(maps[i]);
+    fieldOverlays[i] = overlay;
+  }
+}
+
+// ==========================================================================
+// Isobars
+// ==========================================================================
+async function loadIsobars() {
+  var resp = await fetch("/api/isobars");
+  var geojson = await resp.json();
+
+  maps.forEach(function(map, i) {
+    if (isobarLayers[i]) map.removeLayer(isobarLayers[i]);
+    isobarLayers[i] = L.geoJSON(geojson, {
+      style: function(feature) {
+        return {
+          color: "#444",
+          weight: feature.properties.is_master ? 1.4 : 0.5,
+          opacity: feature.properties.is_master ? 0.7 : 0.4,
+          interactive: false,
+        };
+      },
+    }).addTo(map);
+  });
+}
+
+// ==========================================================================
+// Pressure centers
+// ==========================================================================
+async function loadCenters() {
+  var resp = await fetch("/api/centers");
+  var centers = await resp.json();
+
+  maps.forEach(function(map, i) {
+    if (centerLayers[i]) map.removeLayer(centerLayers[i]);
+
+    var layer = L.layerGroup();
+    centers.forEach(function(c) {
+      var label = c.primary ? c.label.toUpperCase() : c.label.toLowerCase();
+      var color = c.type === "H" ? "#0044CC" : "#CC0000";
+      var size = c.primary ? 16 : 12;
+      var nameHtml = c.name ? '<br><span style="font-size:9px;font-style:italic">' + c.name + '</span>' : "";
+
+      var icon = L.divIcon({
+        className: "",
+        html: '<div style="text-align:center;color:' + color + ';font-weight:bold;' +
+          'font-size:' + size + 'px;text-shadow:0 0 3px white,0 0 3px white,0 0 5px white;' +
+          'line-height:1.1;pointer-events:auto;cursor:pointer;">' +
+          label + nameHtml + '<br>' +
+          '<span style="font-size:' + (size - 4) + 'px">' + Math.round(c.value) + '</span>' +
+          '</div>',
+        iconSize: [50, 36],
+        iconAnchor: [25, 18],
+      });
+
+      var marker = L.marker([c.lat, c.lon], { icon: icon, interactive: true });
+      if (c.type === "L") {
+        marker.on("click", function() { generateFromCenter(c.id, c.value); });
+      }
+      marker.addTo(layer);
+    });
+    layer.addTo(map);
+    centerLayers[i] = layer;
+  });
+}
+
+// ==========================================================================
+// Actions
+// ==========================================================================
+async function detectFronts() {
+  showLoading();
+  setStatus("Detectando frentes...");
+  try {
+    var resp = await fetch("/api/fronts/detect");
+    var geojson = await resp.json();
+    masterFronts = geojson;
+    renderFrontsOnAllPanels();
+    var n = geojson.features ? geojson.features.length : 0;
+    setStatus(n + " frentes detectados. Click en un frente para eliminarlo.");
+  } catch (e) {
+    setStatus("Error detectando: " + e.message);
+  } finally {
+    hideLoading();
+  }
+}
+
+async function saveFronts() {
+  try {
+    var resp = await fetch("/api/fronts", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(masterFronts),
+    });
+    var data = await resp.json();
+    setStatus("Frentes guardados (" + data.n_fronts + ")");
+  } catch (e) {
+    setStatus("Error guardando: " + e.message);
+  }
+}
+
+async function generateFromCenter(centerId, value) {
+  showLoading();
+  setStatus("Generando frentes desde " + centerId + " (" + Math.round(value) + " hPa)...");
+  try {
+    var resp = await fetch("/api/fronts/generate/" + centerId, { method: "POST" });
+    var geojson = await resp.json();
+    masterFronts = geojson;
+    renderFrontsOnAllPanels();
+    var n = geojson.features ? geojson.features.length : 0;
+    setStatus(n + " frentes totales");
+  } catch (e) {
+    setStatus("Error generando: " + e.message);
+  } finally {
+    hideLoading();
+  }
+}
+
+function flipAllFronts() {
+  (masterFronts.features || []).forEach(function(f) {
+    if (f.properties) f.properties.flip = !f.properties.flip;
+  });
+  renderFrontsOnAllPanels();
+  setStatus("Simbolos invertidos");
+}
+
+function clearFronts() {
+  masterFronts = { type: "FeatureCollection", features: [] };
+  renderFrontsOnAllPanels();
+  setStatus("Frentes borrados");
+}
+
+// ==========================================================================
+// Event bindings
+// ==========================================================================
+document.getElementById("btn-load").addEventListener("click", loadData);
+document.getElementById("btn-detect").addEventListener("click", detectFronts);
+document.getElementById("btn-save").addEventListener("click", saveFronts);
+document.getElementById("btn-flip").addEventListener("click", flipAllFronts);
+document.getElementById("btn-clear-fronts").addEventListener("click", clearFronts);
+
+document.getElementById("layout-select").addEventListener("change", function() {
+  var layout = parseLayout();
+  rebuildMosaic(layout.cols, layout.rows);
+});
+
+document.getElementById("front-type-select").addEventListener("change", updateAllDrawOptions);
+
+// ==========================================================================
+// Init
+// ==========================================================================
+(async function init() {
+  await loadCoastlines();
+  var layout = parseLayout();
+  rebuildMosaic(layout.cols, layout.rows);
+  document.getElementById("front-type-swatch").style.background = getSelectedFrontColor();
+  setStatus("Listo. Introduzca fecha y pulse 'Cargar datos'.");
+})();
+</script>
+
+</body>
+</html>
