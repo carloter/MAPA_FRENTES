@@ -80,7 +80,6 @@ def _orient_front_outward(front) -> None:
     if getattr(front, "association_end", None) == "end":
         front.lons = front.lons[::-1]
         front.lats = front.lats[::-1]
-        # Si algún día guardas arrays por punto (scores, flags, etc.), inviértelos aquí también.
         if hasattr(front, "scores") and isinstance(front.scores, (list, np.ndarray)):
             front.scores = front.scores[::-1]
 
@@ -136,6 +135,7 @@ def draw_fronts(
     highlight_id: str | None = None,
     filter_fronts: list | None = None,
     show_importance: bool = False,
+    skip_orient: bool = False,
 ):
     """Dibuja todos los frentes de la coleccion en el mapa.
 
@@ -148,6 +148,8 @@ def draw_fronts(
         highlight_id: ID del frente a resaltar (opcional).
         filter_fronts: Lista de frentes a dibujar (None = todos).
         show_importance: Si True, aplica estilo diferenciado a primarios/secundarios.
+        skip_orient: Si True, no aplica orientación automática (para export web
+                     donde el usuario ya ajustó la dirección con flip).
     """
     lw = cfg.plotting.front_linewidth
     symbol_size = cfg.plotting.front_symbol_size
@@ -162,7 +164,8 @@ def draw_fronts(
             continue
 
         # (1) Orientación estable para evitar que los símbolos "salten" de lado
-        _orient_front_outward(front)
+        if not skip_orient:
+            _orient_front_outward(front)
 
         style = FRONT_STYLES.get(front.front_type, FRONT_STYLES[FrontType.COLD])
 
@@ -230,12 +233,6 @@ def draw_fronts(
 
             # Símbolos WMO bicolor: semicirculos rojos + triángulos azules
             flip = getattr(front, "flip_symbols", False)
-            if front.front_type == FrontType.COLD:
-                flip = not flip
-
-            # Si tras orientar (centro->fuera) notas que SIEMPRE está al revés,
-            # descomenta la línea siguiente:
-            # flip = not flip
 
             line, = ax.plot(
                 front.lons,
@@ -276,8 +273,7 @@ def draw_fronts(
 
         flip = getattr(front, "flip_symbols", False)
 
-        # Frentes fríos: los triángulos deben apuntar hacia el aire cálido.
-        # Con la orientación centro→fuera, MetPy los pone al revés por defecto.
+        # Frentes fríos: MetPy pone triángulos al revés por defecto con orientación centro→fuera
         if front.front_type == FrontType.COLD:
             flip = not flip
 

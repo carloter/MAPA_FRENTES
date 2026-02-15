@@ -93,6 +93,44 @@
 
     /* WMO symbol markers: no shadow, no default icon styles, allow rotation overflow */
     .wmo-symbol { background: none !important; border: none !important; overflow: visible !important; }
+
+    /* Export dropdown */
+    .export-dropdown {
+      position: relative; display: inline-block;
+    }
+    .export-dropdown-btn {
+      padding: 5px 14px; border-radius: 4px; border: 1px solid #0f3460;
+      background: #1a1a2e; color: #e0e0e0; cursor: pointer;
+      font-size: 12px; white-space: nowrap; transition: background 0.2s;
+    }
+    .export-dropdown-btn:hover { background: #0f3460; }
+    .export-dropdown-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+    .export-dropdown-menu {
+      display: none; position: absolute; top: 100%; left: 0;
+      background: #16213e; border: 1px solid #0f3460; border-radius: 4px;
+      z-index: 9000; min-width: 200px; margin-top: 2px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+    }
+    .export-dropdown-menu.open { display: block; }
+    .export-dropdown-menu button {
+      display: block; width: 100%; text-align: left;
+      padding: 8px 14px; border: none; background: none;
+      color: #e0e0e0; font-size: 12px; cursor: pointer;
+      white-space: nowrap;
+    }
+    .export-dropdown-menu button:hover { background: #0f3460; }
+    .export-dropdown-menu hr {
+      border: none; border-top: 1px solid #0f3460; margin: 2px 0;
+    }
+
+    /* Vertex edit markers */
+    .vertex-marker {
+      width: 12px; height: 12px; border-radius: 50%;
+      background: #fff; border: 2px solid #222;
+      cursor: grab; box-shadow: 0 0 3px rgba(0,0,0,0.4);
+    }
+    .vertex-marker:hover { background: #ff0; border-color: #000; }
+    .vertex-marker:active { cursor: grabbing; }
   </style>
 </head>
 <body>
@@ -132,7 +170,18 @@
   <div class="tb-sep"></div>
 
   <button id="btn-save" disabled>Guardar</button>
+  <div class="export-dropdown">
+    <button class="export-dropdown-btn" id="btn-export-toggle" disabled>Exportar &#9662;</button>
+    <div class="export-dropdown-menu" id="export-menu">
+      <button id="btn-export">Con campo de fondo</button>
+      <button id="btn-export-clean">Sin campo (limpio)</button>
+      <hr/>
+      <button id="btn-export-mosaic">Mosaico completo</button>
+    </div>
+  </div>
+  <div class="tb-sep"></div>
   <button id="btn-flip" disabled title="Invertir simbolos de todos los frentes">Invertir</button>
+  <button id="btn-edit-mode" disabled title="Activar modo editar: click en un frente para mover vertices">Editar</button>
   <button id="btn-delete-mode" disabled title="Activar modo borrar: click en un frente para eliminarlo">Borrar</button>
   <div class="spacer"></div>
   <span id="status">Listo</span>
@@ -384,6 +433,10 @@ var availableFields = null;
 var coastlineData = null;
 var masterFronts = { type: "FeatureCollection", features: [] };
 var deleteMode = false;
+var editMode = false;
+var selectedFeature = null;
+var vertexMarkers = [];       // L.marker arrastrables (solo panel 0)
+var editHighlights = [];      // L.polyline resaltadas (todos los paneles)
 var colorLegends = [];  // DOM elements per panel
 
 // ==========================================================================
@@ -395,7 +448,9 @@ function hideLoading() { document.getElementById("loading").classList.remove("ac
 function setButtonsEnabled(loaded) {
   document.getElementById("btn-detect").disabled = !loaded;
   document.getElementById("btn-save").disabled = !loaded;
+  document.getElementById("btn-export-toggle").disabled = !loaded;
   document.getElementById("btn-flip").disabled = !loaded;
+  document.getElementById("btn-edit-mode").disabled = !loaded;
   document.getElementById("btn-delete-mode").disabled = !loaded;
 }
 
@@ -464,9 +519,13 @@ function renderFrontsOnAllPanels() {
           if (idx >= 0) masterFronts.features.splice(idx, 1);
           renderFrontsOnAllPanels();
           setStatus("Frente eliminado");
+        } else if (editMode) {
+          // Select front for vertex editing
+          selectFrontForEdit(feature);
         } else {
           // Flip symbol direction
           feature.properties.flip = !feature.properties.flip;
+          feature.properties.flip_symbols = feature.properties.flip;
           renderFrontsOnAllPanels();
           setStatus("Simbolos invertidos (" + ft + ")");
         }
@@ -569,6 +628,8 @@ function _createPanel(idx, mosaic, fieldKeys, fieldLabels) {
   map.getPane("coastlines").style.zIndex = 450;
   map.createPane("fronts");
   map.getPane("fronts").style.zIndex = 650;
+  map.createPane("vertexEdit");
+  map.getPane("vertexEdit").style.zIndex = 700;
 
   // Basemap
   L.tileLayer(
@@ -595,6 +656,14 @@ function _createPanel(idx, mosaic, fieldKeys, fieldLabels) {
       renderFrontsOnAllPanels();
       if (dataLoaded) refreshFieldsForViewport();
     }, 300);
+  });
+
+  // Click on map background: deselect in edit mode
+  map.on("click", function() {
+    if (editMode && selectedFeature) {
+      clearEditSelection();
+      setStatus("Frente deseleccionado. Click en otro frente para editarlo.");
+    }
   });
 
   maps.push(map);
@@ -1002,16 +1071,165 @@ async function generateFromCenter(centerId, value) {
 
 function flipAllFronts() {
   (masterFronts.features || []).forEach(function(f) {
-    if (f.properties) f.properties.flip = !f.properties.flip;
+    if (f.properties) {
+      f.properties.flip = !f.properties.flip;
+      f.properties.flip_symbols = f.properties.flip;
+    }
   });
   renderFrontsOnAllPanels();
   setStatus("Simbolos invertidos");
+}
+
+async function exportMap(clean) {
+  var fieldName = "none";
+  if (!clean) {
+    var sel = document.querySelector('.panel-field-select[data-panel-idx="0"]');
+    if (sel) fieldName = sel.value;
+  }
+  // Guardar frentes al backend antes de exportar (para preservar flip y ediciones)
+  try {
+    await fetch("/api/fronts", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(masterFronts),
+    });
+  } catch (e) {
+    console.warn("No se pudieron guardar frentes antes de exportar:", e);
+  }
+  var url = "/api/export?field=" + encodeURIComponent(fieldName) + "&clean=" + (clean ? "true" : "false");
+  setStatus("Exportando mapa Lambert" + (clean ? " (limpio)" : " (" + fieldName + ")") + "...");
+  window.open(url, "_blank");
+}
+
+async function exportMosaic() {
+  // Recopilar campos de cada panel visible
+  var fields = [];
+  document.querySelectorAll(".panel-field-select").forEach(function(sel) {
+    fields.push(sel.value || "none");
+  });
+  if (fields.length === 0) { setStatus("No hay paneles visibles"); return; }
+
+  // Guardar frentes al backend
+  try {
+    await fetch("/api/fronts", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(masterFronts),
+    });
+  } catch (e) {
+    console.warn("No se pudieron guardar frentes antes de exportar:", e);
+  }
+
+  var layout = parseLayout();
+  var params = "cols=" + layout.cols + "&rows=" + layout.rows;
+  fields.forEach(function(f) { params += "&fields=" + encodeURIComponent(f); });
+  var url = "/api/export/mosaic?" + params;
+  setStatus("Exportando mosaico " + layout.cols + "x" + layout.rows + " en Lambert...");
+  window.open(url, "_blank");
+}
+
+// ==========================================================================
+// Edit mode: select front + drag vertices
+// ==========================================================================
+
+function clearEditSelection() {
+  // Remove vertex markers from panel 0
+  vertexMarkers.forEach(function(m) { m.remove(); });
+  vertexMarkers = [];
+  // Remove highlight polylines from all panels
+  editHighlights.forEach(function(hl) { hl.remove(); });
+  editHighlights = [];
+  selectedFeature = null;
+}
+
+function selectFrontForEdit(feature) {
+  clearEditSelection();
+  selectedFeature = feature;
+  var coords = feature.geometry.coordinates;
+  var latlngs = coords.map(function(c) { return [c[1], c[0]]; });
+
+  // Highlight polyline on all panels
+  maps.forEach(function(map) {
+    if (!map) return;
+    var hl = L.polyline(latlngs, {
+      color: "#FFD700", weight: 5, opacity: 0.7, interactive: false,
+    }).addTo(map);
+    editHighlights.push(hl);
+  });
+
+  // Draggable vertex markers on panel 0 only (using vertexEdit pane for z-index)
+  var map0 = maps[0];
+  if (!map0) return;
+
+  var vertexIcon = L.divIcon({
+    className: "vertex-marker",
+    iconSize: [14, 14],
+    iconAnchor: [7, 7],
+  });
+
+  coords.forEach(function(coord, idx) {
+    var marker = L.marker([coord[1], coord[0]], {
+      icon: vertexIcon,
+      draggable: true,
+      pane: "vertexEdit",
+    }).addTo(map0);
+
+    // Prevent map click (deselect) when interacting with vertex markers
+    marker.on("mousedown", function(e) { L.DomEvent.stopPropagation(e); });
+
+    marker.on("drag", function(e) {
+      var pos = e.target.getLatLng();
+      // Update GeoJSON coordinates
+      feature.geometry.coordinates[idx] = [pos.lng, pos.lat];
+      // Update highlight polylines in real time
+      var newLatLngs = feature.geometry.coordinates.map(function(c) {
+        return [c[1], c[0]];
+      });
+      editHighlights.forEach(function(hl) { hl.setLatLngs(newLatLngs); });
+    });
+
+    marker.on("dragend", function() {
+      // Re-render WMO symbols on all panels with new geometry
+      renderFrontsOnAllPanels();
+      // Re-select to refresh highlights and vertex positions
+      selectFrontForEdit(feature);
+    });
+
+    vertexMarkers.push(marker);
+  });
+
+  var ft = feature.properties.front_type || "?";
+  setStatus("Editando frente " + ft + " (" + coords.length + " vertices). Arrastra vertices para deformar.");
+}
+
+function toggleEditMode() {
+  editMode = !editMode;
+  var btn = document.getElementById("btn-edit-mode");
+  if (editMode) {
+    // Desactivar delete mode si estaba activo
+    if (deleteMode) {
+      deleteMode = false;
+      document.getElementById("btn-delete-mode").classList.remove("active-mode");
+    }
+    btn.classList.add("active-mode");
+    setStatus("Modo editar activo: click en un frente para seleccionarlo");
+  } else {
+    btn.classList.remove("active-mode");
+    clearEditSelection();
+    setStatus("Modo editar desactivado");
+  }
 }
 
 function toggleDeleteMode() {
   deleteMode = !deleteMode;
   var btn = document.getElementById("btn-delete-mode");
   if (deleteMode) {
+    // Desactivar edit mode si estaba activo
+    if (editMode) {
+      editMode = false;
+      clearEditSelection();
+      document.getElementById("btn-edit-mode").classList.remove("active-mode");
+    }
     btn.classList.add("active-mode");
     setStatus("Modo borrar activo: click en un frente para eliminarlo");
   } else {
@@ -1026,8 +1244,40 @@ function toggleDeleteMode() {
 document.getElementById("btn-load").addEventListener("click", loadData);
 document.getElementById("btn-detect").addEventListener("click", detectFronts);
 document.getElementById("btn-save").addEventListener("click", saveFronts);
+
+// Export dropdown toggle
+document.getElementById("btn-export-toggle").addEventListener("click", function(e) {
+  e.stopPropagation();
+  var menu = document.getElementById("export-menu");
+  menu.classList.toggle("open");
+});
+document.addEventListener("click", function() {
+  document.getElementById("export-menu").classList.remove("open");
+});
+document.getElementById("btn-export").addEventListener("click", function() {
+  document.getElementById("export-menu").classList.remove("open");
+  exportMap(false);
+});
+document.getElementById("btn-export-clean").addEventListener("click", function() {
+  document.getElementById("export-menu").classList.remove("open");
+  exportMap(true);
+});
+document.getElementById("btn-export-mosaic").addEventListener("click", function() {
+  document.getElementById("export-menu").classList.remove("open");
+  exportMosaic();
+});
+
 document.getElementById("btn-flip").addEventListener("click", flipAllFronts);
+document.getElementById("btn-edit-mode").addEventListener("click", toggleEditMode);
 document.getElementById("btn-delete-mode").addEventListener("click", toggleDeleteMode);
+
+// Escape key: deselect front in edit mode
+document.addEventListener("keydown", function(e) {
+  if (e.key === "Escape" && editMode && selectedFeature) {
+    clearEditSelection();
+    setStatus("Frente deseleccionado");
+  }
+});
 
 document.getElementById("layout-select").addEventListener("change", function() {
   var layout = parseLayout();

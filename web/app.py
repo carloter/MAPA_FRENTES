@@ -99,6 +99,12 @@ def _compute_viewport_range(
     return float(np.nanmin(subset)), float(np.nanmax(subset))
 
 
+def _lat_to_mercator_y(lat_deg: np.ndarray) -> np.ndarray:
+    """Convierte latitud en grados a coordenada y de Web Mercator (radianes)."""
+    lat_rad = np.deg2rad(np.clip(lat_deg, -85, 85))
+    return np.log(np.tan(np.pi / 4 + lat_rad / 2))
+
+
 def _render_field_png(
     derived: DerivedField,
     lats: np.ndarray,
@@ -107,27 +113,53 @@ def _render_field_png(
     vmin: float | None = None,
     vmax: float | None = None,
 ) -> bytes:
-    """Renderiza un DerivedField como PNG transparente sin basemap.
+    """Renderiza un DerivedField como PNG transparente en proyeccion Web Mercator.
 
     El PNG cubre exactamente [lons.min(), lons.max()] x [lats.min(), lats.max()]
-    para alinearse con L.imageOverlay en Leaflet.
-    Si se pasan vmin/vmax, se usan para la escala de color.
+    para alinearse con L.imageOverlay en Leaflet (que usa Web Mercator).
+    Los datos se re-interpolan a un grid uniforme en coordenada y Mercator
+    para que los pixeles coincidan con los tiles de Leaflet.
     """
-    aspect = len(lats) / len(lons)
+    from scipy.interpolate import RegularGridInterpolator
+
+    # Convertir lats a espacio Mercator y crear grid uniforme
+    merc_y = _lat_to_mercator_y(lats)
+    merc_y_min, merc_y_max = float(merc_y.min()), float(merc_y.max())
+    n_merc = len(lats)
+    merc_y_uniform = np.linspace(merc_y_min, merc_y_max, n_merc)
+
+    # Latitudes correspondientes al grid Mercator uniforme
+    lats_merc = np.rad2deg(2 * np.arctan(np.exp(merc_y_uniform)) - np.pi / 2)
+
+    # Interpolar datos al grid Mercator
+    # lats del dataset pueden estar en orden descendente
+    lat_sorted = lats if lats[0] < lats[-1] else lats[::-1]
+    data_sorted = derived.data if lats[0] < lats[-1] else derived.data[::-1, :]
+
+    interp = RegularGridInterpolator(
+        (lat_sorted, lons), data_sorted,
+        method="linear", bounds_error=False, fill_value=np.nan,
+    )
+    lon2d_merc, lat2d_merc = np.meshgrid(lons, lats_merc)
+    data_merc = interp((lat2d_merc, lon2d_merc))
+
+    # Calcular aspect ratio en espacio Mercator
+    merc_height = merc_y_max - merc_y_min
+    lon_width = float(lons.max() - lons.min())
+    aspect = merc_height / lon_width if lon_width > 0 else 1.0
     height_px = int(width_px * aspect)
+    height_px = max(height_px, 100)
+
     dpi = 100
     fig = plt.figure(figsize=(width_px / dpi, height_px / dpi), dpi=dpi)
     ax = fig.add_axes([0, 0, 1, 1])
     ax.set_axis_off()
 
-    lon2d, lat2d = np.meshgrid(lons, lats)
-    data = derived.data
     num_levels = 20
-
     if vmin is None:
-        vmin = float(np.nanmin(data))
+        vmin = float(np.nanmin(derived.data))
     if vmax is None:
-        vmax = float(np.nanmax(data))
+        vmax = float(np.nanmax(derived.data))
 
     if derived.center_zero:
         abs_max = max(abs(vmin), abs(vmax))
@@ -137,13 +169,15 @@ def _render_field_png(
         levels = np.linspace(vmin, vmax, num_levels)
         norm = None
 
+    # Plotear en espacio Mercator (eje y = merc_y_uniform)
+    lon2d_plot, merc2d_plot = np.meshgrid(lons, merc_y_uniform)
     ax.contourf(
-        lon2d, lat2d, data,
+        lon2d_plot, merc2d_plot, data_merc,
         levels=levels, cmap=derived.cmap, norm=norm,
         alpha=0.7, extend="both",
     )
     ax.set_xlim(float(lons.min()), float(lons.max()))
-    ax.set_ylim(float(lats.min()), float(lats.max()))
+    ax.set_ylim(merc_y_min, merc_y_max)
     ax.set_aspect("auto")
 
     buf = io.BytesIO()
@@ -501,6 +535,160 @@ async def generate_from_center(center_id: str):
         state.fronts.add(f)
 
     return collection_to_geojson(state.fronts)
+
+
+@app.get("/api/export")
+async def export_map_png(
+    field: str = Query("none"),
+    clean: bool = Query(False),
+):
+    """Exporta mapa en proyeccion Lambert (PNG 300 DPI) con simbologia WMO.
+
+    - field: campo de fondo (o "none")
+    - clean: si True, omite campo de fondo (solo basemap + isobaras + centros + frentes)
+    """
+    if state.ds is None:
+        raise HTTPException(400, "No hay datos cargados.")
+
+    from mapa_frentes.plotting.map_canvas import create_map_figure
+    from mapa_frentes.plotting.isobar_renderer import (
+        draw_isobars, draw_pressure_labels, draw_background_field,
+    )
+    from mapa_frentes.plotting.front_renderer import draw_fronts
+
+    fig, ax = create_map_figure(state.cfg)
+
+    # Campo de fondo (antes de isobaras para que quede debajo)
+    if not clean and field != "none" and field in AVAILABLE_FIELDS:
+        derived = _get_derived(field)
+        if derived is not None:
+            draw_background_field(ax, derived, state.lons, state.lats, state.cfg)
+
+    # Isobaras
+    if state.msl_smooth is not None:
+        draw_isobars(ax, state.msl_smooth, state.lons, state.lats, state.levels, state.cfg)
+
+    # Centros de presion
+    if state.centers:
+        draw_pressure_labels(ax, state.centers, state.cfg)
+
+    # Frentes con simbolos WMO (MetPy)
+    # skip_orient=True: el usuario ya ajustó la dirección con flip en la web
+    if len(state.fronts) > 0:
+        draw_fronts(ax, state.fronts, state.cfg, skip_orient=True)
+
+    # Titulo con fecha
+    if state.date_info:
+        ax.set_title(state.date_info, fontsize=10, loc="right", color="#555")
+
+    # Renderizar a PNG
+    buf = io.BytesIO()
+    fig.savefig(buf, format="png", dpi=300, bbox_inches="tight", facecolor="white")
+    plt.close(fig)
+    buf.seek(0)
+
+    filename = "mapa_frentes"
+    if not clean and field != "none":
+        filename += f"_{field}"
+    filename += ".png"
+
+    return StreamingResponse(
+        buf,
+        media_type="image/png",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@app.get("/api/export/mosaic")
+async def export_mosaic_png(
+    cols: int = Query(3),
+    rows: int = Query(2),
+    fields: list[str] = Query([]),
+):
+    """Exporta mosaico completo en proyeccion Lambert (PNG 300 DPI).
+
+    Cada panel tiene su campo de fondo + isobaras + centros + frentes.
+    """
+    if state.ds is None:
+        raise HTTPException(400, "No hay datos cargados.")
+
+    from mapa_frentes.plotting.map_canvas import build_projection, apply_base_cartography
+    from mapa_frentes.plotting.isobar_renderer import (
+        draw_isobars, draw_pressure_labels, draw_background_field,
+    )
+    from mapa_frentes.plotting.front_renderer import draw_fronts
+
+    n_panels = cols * rows
+    # Rellenar con "none" si faltan campos
+    panel_fields = list(fields)
+    while len(panel_fields) < n_panels:
+        panel_fields.append("none")
+
+    projection = build_projection(state.cfg)
+    fig_w = 6 * cols
+    fig_h = 4.5 * rows
+    fig, axes = plt.subplots(
+        rows, cols,
+        figsize=(fig_w, fig_h),
+        subplot_kw={"projection": projection},
+    )
+    if rows == 1 and cols == 1:
+        all_axes = [axes]
+    elif rows == 1 or cols == 1:
+        all_axes = list(axes.flatten()) if hasattr(axes, "flatten") else [axes]
+    else:
+        all_axes = axes.flatten().tolist()
+
+    for i, ax in enumerate(all_axes):
+        if i >= n_panels:
+            ax.set_visible(False)
+            continue
+
+        field_name = panel_fields[i]
+        apply_base_cartography(ax, state.cfg, lightweight=False)
+
+        # Campo de fondo
+        if field_name != "none" and field_name in AVAILABLE_FIELDS:
+            derived = _get_derived(field_name)
+            if derived is not None:
+                draw_background_field(ax, derived, state.lons, state.lats, state.cfg)
+
+        # Isobaras
+        if state.msl_smooth is not None:
+            draw_isobars(ax, state.msl_smooth, state.lons, state.lats, state.levels, state.cfg)
+
+        # Centros
+        if state.centers:
+            draw_pressure_labels(ax, state.centers, state.cfg)
+
+        # Frentes
+        if len(state.fronts) > 0:
+            draw_fronts(ax, state.fronts, state.cfg, skip_orient=True)
+
+        # Titulo del panel
+        label = AVAILABLE_FIELDS.get(field_name, field_name) if field_name != "none" else "Base"
+        ax.set_title(label, fontsize=8, pad=3)
+
+    # Titulo general
+    if state.date_info:
+        fig.suptitle(state.date_info, fontsize=11, color="#555", y=0.99)
+
+    fig.subplots_adjust(
+        left=0.02, right=0.98, top=0.94, bottom=0.02,
+        wspace=0.05, hspace=0.10,
+    )
+
+    buf = io.BytesIO()
+    fig.savefig(buf, format="png", dpi=200, bbox_inches="tight", facecolor="white")
+    plt.close(fig)
+    buf.seek(0)
+
+    filename = f"mosaico_{cols}x{rows}.png"
+    return StreamingResponse(
+        buf,
+        media_type="image/png",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
 # ---------------------------------------------------------------------------
