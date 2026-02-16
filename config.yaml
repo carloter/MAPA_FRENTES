@@ -20,9 +20,9 @@ pressure_centers:
   min_distance_deg: 4.5     # menos centros secundarios (más estilo sinóptico)
   secondary_radius_deg: 5.0 # radio para clasificar primario/secundario
   high_min_pressure: 1012.0 # no marcar H si presion < este valor (hPa)
-  low_max_pressure: 1020.0  # no marcar L si presion > este valor (hPa)
-  min_depth_hpa: 2.0        # profundidad minima (dif. con presion media entorno)
-  depth_radius_deg: 5.0     # radio para calcular presion media del entorno
+  low_max_pressure: 1012.0  # no marcar L si presion > este valor (hPa)
+  min_depth_hpa: 1.0        # profundidad minima (dif. con presion media entorno)
+  depth_radius_deg: 3.0     # radio para calcular presion media del entorno
   h_color: "#0044CC"
   l_color: "#CC0000"
   fontsize: 11
@@ -30,32 +30,59 @@ pressure_centers:
   high_label: "A"            # etiqueta para anticiclon (estilo AEMET)
   low_label: "B"             # etiqueta para borrasca (estilo AEMET)
 
+# tfp:
+#   smooth_sigma: 4.5                # menos suavizado = más detalle frontal
+#   gradient_threshold: 2.0e-6       # umbral más bajo = detecta gradientes más débiles
+
+#   # detección
+#   dbscan_eps_deg: 2.0              # algo más permisivo para agrupar puntos
+#   dbscan_min_samples: 3            # menos muestras mínimas = más clusters
+#   min_front_points: 2              # acepta frentes con menos puntos
+
+#   # geometría
+#   simplify_tolerance_deg: 0.25     # menos simplificación = conserva más detalle
+#   max_hop_deg: 2.0                 # permite saltos algo mayores para conectar segmentos
+#   angular_weight: 0.60             # menos rigidez angular = traza más flexible
+#   spline_smoothing: 0.35
+#   merge_distance_deg: 2.0          # fusiona segmentos más distantes
+
+#   # filtros físicos
+#   use_mslp_filter: true            # mantener para evitar falsos en dorsales
+#   mslp_laplacian_sigma: 6.5
+
+#   use_frontogenesis_filter: true
+#   frontogenesis_percentile: 5      # solo filtra los puntos más débiles (era 10)
+
+#   # más frentes permitidos
+#   min_front_length_deg: 1.5        # acepta frentes más cortos (era 2.8)
+#   max_fronts: 150                  # más capacidad (era 90)
+  
 tfp:
-  smooth_sigma: 5.5                # más sinóptico
-  gradient_threshold: 3.2e-6       # un poco más conservador que 3.0e-6 para bajar ruido
+  smooth_sigma: 4.5                # menos suavizado = más detalle frontal
+  gradient_threshold: 1.0e-6       # umbral más bajo = detecta gradientes más débiles
 
   # detección
-  dbscan_eps_deg: 1.8              # 2.0 tendía a pegar estructuras distintas
-  dbscan_min_samples: 4
-  min_front_points: 3
+  dbscan_eps_deg: 3.0             # algo más permisivo para agrupar puntos
+  dbscan_min_samples: 2              # menos muestras mínimas = más clusters (debe ser entero)
+  min_front_points: 1             # acepta frentes con menos puntos
 
   # geometría
-  simplify_tolerance_deg: 0.30     # menos “rectificación” excesiva
-  max_hop_deg: 1.5                 # evita saltos largos/teleports
-  angular_weight: 0.70             # 0.75 puede forzar trazas demasiado rígidas
+  simplify_tolerance_deg: 0.25     # menos simplificación = conserva más detalle
+  max_hop_deg: 3.0                 # permite saltos algo mayores para conectar segmentos
+  angular_weight: 0.60             # menos rigidez angular = traza más flexible
   spline_smoothing: 0.35
-  merge_distance_deg: 1.6          # 1.2 fusionaba poco; 1.6 une mejor segmentos coherentes
+  merge_distance_deg: 2.0          # fusiona segmentos más distantes
 
   # filtros físicos
-  use_mslp_filter: true            # clave para evitar frentes en dorsales/subtropicales
-  mslp_laplacian_sigma: 6.5        # 12 suavizaba demasiado la curvatura sinóptica
+  use_mslp_filter: true            # mantener para evitar falsos en dorsales
+  mslp_laplacian_sigma: 6.5
 
   use_frontogenesis_filter: true
-  frontogenesis_percentile: 10     # filtra puntos débiles manteniendo frentes reales
+  frontogenesis_percentile: 1      # solo filtra los puntos más débiles (era 10)
 
-  # solo frentes grandes (pero sin pasarse)
-  min_front_length_deg: 2.8        # elimina segmentos cortos “automáticos”
-  max_fronts: 90                   # evita saturación visual
+  # más frentes permitidos
+  min_front_length_deg: 1.5        # acepta frentes más cortos (era 2.8)
+  max_fronts: 150                  # más capacidad (era 90)
 
 plotting:
   figsize: [18, 11]
@@ -71,8 +98,8 @@ plotting:
   border_linewidth: 0.3
   ocean_color: "#D6EAF8"
   land_color: "#F5F0E8"
-  front_linewidth: 0.8
-  front_symbol_size: 1.4
+  front_linewidth: 1
+  front_symbol_size: 1.6
   front_symbol_spacing: 1.9
 
 center_fronts:
@@ -113,6 +140,7 @@ ecmwf:
   step: 0
   surface_params:
     - "msl"
+    - "tp"
   pressure_levels: [500, 700, 850]
   pressure_params:
     - "t"
@@ -127,6 +155,21 @@ background_field:
   alpha: 0.45                # transparencia del contourf
   num_levels: 20             # numero de niveles de contorno
   colorbar: true             # mostrar colorbar
+
+precipitation:
+  threshold_mm: 0.5      # no dibujar por debajo de este valor (transparente)
+  alpha: 0.5             # transparencia del contourf
+  cmap: "YlGnBu"         # colormap
+  num_levels: 15          # niveles de contorno
+
+wind_vectors:
+  thin_factor: 5         # cada N puntos de la rejilla (0.25deg * 8 = 2deg)
+  scale: 6000             # escala del quiver (mayor = flechas mas cortas)
+  width: 0.0005           # grosor de las flechas
+  color: "#555555"       # color de las flechas
+  alpha: 1.0             # transparencia (1.0 = opaco)
+  web_scale_factor: 0.1 # multiplicador de scale para web (mayor = flechas mas cortas en web)
+  web_width_factor: 0.6  # multiplicador de width para web (menor = mas finas en web)
 
 occlusion:
   enabled: true

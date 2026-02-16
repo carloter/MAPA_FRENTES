@@ -41,7 +41,7 @@ def cluster_and_connect(
         return []
 
     coords = np.column_stack([lons, lats])
-    db = DBSCAN(eps=eps_deg, min_samples=min_samples, metric="euclidean")
+    db = DBSCAN(eps=eps_deg, min_samples=int(min_samples), metric="euclidean")
     labels = db.fit_predict(coords)
 
     polylines = []

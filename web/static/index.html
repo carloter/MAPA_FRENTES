@@ -14,7 +14,7 @@
       height: 44px; background: #16213e; display: flex;
       align-items: center; padding: 0 10px; gap: 8px;
       border-bottom: 2px solid #0f3460; flex-wrap: nowrap;
-      overflow-x: auto;
+      overflow: visible; position: relative; z-index: 9500;
     }
     #toolbar label { color: #8899aa; font-size: 11px; white-space: nowrap; }
     #toolbar input, #toolbar select {
@@ -44,7 +44,7 @@
 
     #mosaic {
       display: grid;
-      grid-template-columns: repeat(3, 1fr);
+      grid-template-columns: repeat(2, 1fr);
       grid-template-rows: repeat(2, 1fr);
       height: calc(100vh - 44px);
       gap: 2px; background: #0a0a1a;
@@ -149,8 +149,9 @@
   </select>
   <label>Layout:</label>
   <select id="layout-select">
-    <option value="2x2">2x2</option>
-    <option value="3x2" selected>3x2</option>
+    <option value="1x1">1 mapa</option>
+    <option value="2x2" selected>2x2</option>
+    <option value="3x2">3x2</option>
     <option value="3x3">3x3</option>
     <option value="4x3">4x3</option>
   </select>
@@ -179,6 +180,10 @@
       <button id="btn-export-mosaic">Mosaico completo</button>
     </div>
   </div>
+  <div class="tb-sep"></div>
+  <label><input type="checkbox" id="precip-check" /> Precip</label>
+  <label><input type="checkbox" id="wind-850-check" /> V850</label>
+  <label><input type="checkbox" id="wind-700-check" /> V700</label>
   <div class="tb-sep"></div>
   <button id="btn-flip" disabled title="Invertir simbolos de todos los frentes">Invertir</button>
   <button id="btn-edit-mode" disabled title="Activar modo editar: click en un frente para mover vertices">Editar</button>
@@ -421,6 +426,8 @@ var DEFAULT_ZOOM = 4;
 // ==========================================================================
 var maps = [];
 var fieldOverlays = [];
+var precipOverlays = []; // precipitation PNG overlays per panel
+var windLayers = [];     // wind vector canvas layers per panel
 var isobarLayers = [];
 var centerLayers = [];
 var coastlineLayers = [];
@@ -592,6 +599,12 @@ function _createPanel(idx, mosaic, fieldKeys, fieldLabels) {
   sel.className = "panel-field-select";
   sel.dataset.panelIdx = idx;
 
+  // Opcion "Sin fondo" (mapa limpio)
+  var noneOpt = document.createElement("option");
+  noneOpt.value = "none";
+  noneOpt.textContent = "Sin fondo";
+  sel.appendChild(noneOpt);
+
   if (fieldKeys.length > 0) {
     fieldKeys.forEach(function(key) {
       var opt = document.createElement("option");
@@ -640,6 +653,8 @@ function _createPanel(idx, mosaic, fieldKeys, fieldLabels) {
   addCoastlineToMap(map, idx);
 
   fieldOverlays.push(null);
+  precipOverlays.push(null);
+  windLayers.push(null);
   isobarLayers.push(null);
   centerLayers.push(null);
   frontLayers.push(null);
@@ -674,6 +689,8 @@ function rebuildMosaic(cols, rows) {
   maps.forEach(function(m) { m.remove(); });
   maps = [];
   fieldOverlays = [];
+  precipOverlays = [];
+  windLayers = [];
   isobarLayers = [];
   centerLayers = [];
   coastlineLayers = [];
@@ -823,6 +840,14 @@ function updateColorLegend(panelIdx, info) {
 
 async function loadSingleFieldImage(idx, fieldName) {
   var map = maps[idx];
+
+  // Si es "none", quitar overlay y leyenda
+  if (fieldName === "none") {
+    if (fieldOverlays[idx]) { map.removeLayer(fieldOverlays[idx]); fieldOverlays[idx] = null; }
+    updateColorLegend(idx, null);
+    return;
+  }
+
   var vp = _getViewportParams(map);
   var timestamp = Date.now();
   var url = "/api/fields/" + fieldName + "/image?" + vp + "&t=" + timestamp;
@@ -841,6 +866,191 @@ async function loadSingleFieldImage(idx, fieldName) {
       updateColorLegend(idx, cbInfo);
     }
   } catch (e) { /* ignore */ }
+}
+
+async function loadPrecipOverlay() {
+  if (!dataLoaded || !dataBounds) return;
+  // Remove existing
+  for (var i = 0; i < maps.length; i++) {
+    if (precipOverlays[i]) { maps[i].removeLayer(precipOverlays[i]); precipOverlays[i] = null; }
+  }
+  if (!document.getElementById("precip-check").checked) return;
+
+  // Verificar si hay datos de precipitacion
+  try {
+    var statusResp = await fetch("/api/precipitation/status");
+    var statusData = await statusResp.json();
+    if (!statusData.available) {
+      setStatus("Precip: " + statusData.reason);
+      document.getElementById("precip-check").checked = false;
+      return;
+    }
+  } catch (e) { /* continuar igualmente */ }
+
+  var timestamp = Date.now();
+  var url = "/api/precipitation/image?t=" + timestamp;
+  for (var i = 0; i < maps.length; i++) {
+    var overlay = L.imageOverlay(url, dataBounds, {
+      opacity: 0.7, interactive: false, zIndex: 150,
+    });
+    overlay.addTo(maps[i]);
+    precipOverlays[i] = overlay;
+  }
+  setStatus("Precipitacion activada");
+}
+
+// --- Wind arrows canvas layer ---
+// Dibuja flechas de viento directamente en canvas de Leaflet (no PNG).
+// Se adaptan al zoom y siempre se ven nitidas.
+
+var _windDataCache = {};  // cache por nivel: { 850: {lat,lon,u,v,color,alpha}, ... }
+
+L.WindArrowsLayer = L.Layer.extend({
+  initialize: function(data, options) {
+    this._data = data;  // {lat[], lon[], u[], v[], color, alpha}
+    L.Util.setOptions(this, options);
+  },
+
+  onAdd: function(map) {
+    this._map = map;
+    this._canvas = L.DomUtil.create("canvas", "wind-arrows-canvas");
+    this._canvas.style.position = "absolute";
+    this._canvas.style.pointerEvents = "none";
+    this._canvas.style.zIndex = "200";
+    map.getPane("overlayPane").appendChild(this._canvas);
+    map.on("moveend zoomend resize", this._redraw, this);
+    this._redraw();
+  },
+
+  onRemove: function(map) {
+    map.off("moveend zoomend resize", this._redraw, this);
+    L.DomUtil.remove(this._canvas);
+  },
+
+  _redraw: function() {
+    var map = this._map;
+    var size = map.getSize();
+    var canvas = this._canvas;
+    canvas.width = size.x;
+    canvas.height = size.y;
+    var topLeft = map.containerPointToLayerPoint([0, 0]);
+    L.DomUtil.setPosition(canvas, topLeft);
+
+    var ctx = canvas.getContext("2d");
+    ctx.clearRect(0, 0, size.x, size.y);
+
+    var d = this._data;
+    if (!d || !d.lat || d.lat.length === 0) return;
+
+    var bounds = map.getBounds();
+    var zoom = map.getZoom();
+
+    // Tamano de flecha en pixeles, adaptado al zoom
+    var arrowLen = Math.max(8, Math.min(22, 4 + zoom * 2.5));
+    var headLen = arrowLen * 0.35;
+    var headHalf = headLen * 0.45;
+    var lineWidth = Math.max(1, arrowLen / 12);
+
+    ctx.strokeStyle = d.color || "#555555";
+    ctx.fillStyle = d.color || "#555555";
+    ctx.globalAlpha = d.alpha !== undefined ? d.alpha : 1.0;
+    ctx.lineWidth = lineWidth;
+    ctx.lineCap = "round";
+
+    for (var i = 0; i < d.lat.length; i++) {
+      var lat = d.lat[i], lon = d.lon[i];
+
+      // Solo dibujar si esta en el viewport
+      if (lat < bounds.getSouth() || lat > bounds.getNorth()) continue;
+      if (lon < bounds.getWest() || lon > bounds.getEast()) continue;
+
+      var pt = map.latLngToContainerPoint([lat, lon]);
+      var u = d.u[i], v = d.v[i];
+      var speed = Math.sqrt(u * u + v * v);
+      if (speed < 0.5) continue;  // no dibujar calma
+
+      // Angulo: u=este, v=norte
+      var angle = Math.atan2(-v, u);  // canvas Y invertido
+
+      // Escalar longitud por velocidad (normalizado a ~40kt max)
+      var lenScale = Math.min(speed / 40, 1.5);
+      var len = arrowLen * lenScale;
+
+      var dx = Math.cos(angle) * len;
+      var dy = Math.sin(angle) * len;
+
+      var x0 = pt.x - dx * 0.5;
+      var y0 = pt.y - dy * 0.5;
+      var x1 = pt.x + dx * 0.5;
+      var y1 = pt.y + dy * 0.5;
+
+      // Linea del cuerpo
+      ctx.beginPath();
+      ctx.moveTo(x0, y0);
+      ctx.lineTo(x1, y1);
+      ctx.stroke();
+
+      // Punta de flecha
+      var ha = Math.atan2(dy, dx);
+      ctx.beginPath();
+      ctx.moveTo(x1, y1);
+      ctx.lineTo(
+        x1 - headLen * Math.cos(ha - 0.45),
+        y1 - headLen * Math.sin(ha - 0.45)
+      );
+      ctx.lineTo(
+        x1 - headLen * Math.cos(ha + 0.45),
+        y1 - headLen * Math.sin(ha + 0.45)
+      );
+      ctx.closePath();
+      ctx.fill();
+    }
+  },
+});
+
+function loadWindOverlays() {
+  if (!dataLoaded) return;
+
+  // Eliminar layers existentes
+  for (var i = 0; i < maps.length; i++) {
+    if (windLayers[i]) {
+      windLayers[i].forEach(function(layer) { maps[i].removeLayer(layer); });
+      windLayers[i] = null;
+    }
+  }
+
+  var levels = [];
+  if (document.getElementById("wind-850-check").checked) levels.push(850);
+  if (document.getElementById("wind-700-check").checked) levels.push(700);
+  if (levels.length === 0) return;
+
+  // Cargar datos JSON para cada nivel y dibujar en canvas
+  levels.forEach(function(level) {
+    // Usar cache si existe
+    if (_windDataCache[level]) {
+      _addWindLayersForLevel(level, _windDataCache[level]);
+      return;
+    }
+
+    fetch("/api/wind_vectors/" + level + "/data")
+      .then(function(r) { return r.json(); })
+      .then(function(data) {
+        _windDataCache[level] = data;
+        _addWindLayersForLevel(level, data);
+      })
+      .catch(function(e) {
+        console.warn("Error cargando viento " + level + ":", e);
+      });
+  });
+}
+
+function _addWindLayersForLevel(level, data) {
+  for (var i = 0; i < maps.length; i++) {
+    var layer = new L.WindArrowsLayer(data);
+    layer.addTo(maps[i]);
+    if (!windLayers[i]) windLayers[i] = [];
+    windLayers[i].push(layer);
+  }
 }
 
 var _syncing = false;
@@ -896,6 +1106,7 @@ async function loadData() {
     ]);
 
     dataLoaded = true;
+    _windDataCache = {};  // invalidar cache de viento al recargar datos
     setButtonsEnabled(true);
 
     masterFronts = { type: "FeatureCollection", features: [] };
@@ -919,6 +1130,10 @@ function updatePanelDropdowns() {
     var currentVal = sel.value;
     var idx = parseInt(sel.dataset.panelIdx);
     sel.innerHTML = "";
+    var noneOpt = document.createElement("option");
+    noneOpt.value = "none";
+    noneOpt.textContent = "Sin fondo";
+    sel.appendChild(noneOpt);
     fieldKeys.forEach(function(key) {
       var opt = document.createElement("option");
       opt.value = key;
@@ -1080,6 +1295,14 @@ function flipAllFronts() {
   setStatus("Simbolos invertidos");
 }
 
+function _getOverlayParams() {
+  var params = "";
+  if (document.getElementById("precip-check").checked) params += "&precip=true";
+  if (document.getElementById("wind-850-check").checked) params += "&wind_levels=850";
+  if (document.getElementById("wind-700-check").checked) params += "&wind_levels=700";
+  return params;
+}
+
 async function exportMap(clean) {
   var fieldName = "none";
   if (!clean) {
@@ -1096,7 +1319,7 @@ async function exportMap(clean) {
   } catch (e) {
     console.warn("No se pudieron guardar frentes antes de exportar:", e);
   }
-  var url = "/api/export?field=" + encodeURIComponent(fieldName) + "&clean=" + (clean ? "true" : "false");
+  var url = "/api/export?field=" + encodeURIComponent(fieldName) + "&clean=" + (clean ? "true" : "false") + _getOverlayParams();
   setStatus("Exportando mapa Lambert" + (clean ? " (limpio)" : " (" + fieldName + ")") + "...");
   window.open(url, "_blank");
 }
@@ -1123,6 +1346,7 @@ async function exportMosaic() {
   var layout = parseLayout();
   var params = "cols=" + layout.cols + "&rows=" + layout.rows;
   fields.forEach(function(f) { params += "&fields=" + encodeURIComponent(f); });
+  params += _getOverlayParams();
   var url = "/api/export/mosaic?" + params;
   setStatus("Exportando mosaico " + layout.cols + "x" + layout.rows + " en Lambert...");
   window.open(url, "_blank");
@@ -1266,6 +1490,10 @@ document.getElementById("btn-export-mosaic").addEventListener("click", function(
   document.getElementById("export-menu").classList.remove("open");
   exportMosaic();
 });
+
+document.getElementById("precip-check").addEventListener("change", loadPrecipOverlay);
+document.getElementById("wind-850-check").addEventListener("change", loadWindOverlays);
+document.getElementById("wind-700-check").addEventListener("change", loadWindOverlays);
 
 document.getElementById("btn-flip").addEventListener("click", flipAllFronts);
 document.getElementById("btn-edit-mode").addEventListener("click", toggleEditMode);

@@ -144,6 +144,27 @@ class OcclusionConfig:
 
 
 @dataclass
+class PrecipitationConfig:
+    """Configuracion para overlay de precipitacion."""
+    threshold_mm: float = 0.5   # no dibujar por debajo de este valor
+    alpha: float = 0.5          # transparencia del contourf
+    cmap: str = "YlGnBu"        # colormap
+    num_levels: int = 15         # niveles de contorno
+
+
+@dataclass
+class WindVectorsConfig:
+    """Configuracion para vectores de viento (quiver)."""
+    thin_factor: int = 8        # cada N puntos de la rejilla
+    scale: float = 600.0        # escala del quiver
+    width: float = 0.002        # grosor de las flechas
+    color: str = "#555555"
+    alpha: float = 0.6
+    web_scale_factor: float = 4.0   # multiplicador de scale para web (coord. Mercator)
+    web_width_factor: float = 0.3   # multiplicador de width para web
+
+
+@dataclass
 class BackgroundFieldConfig:
     """Configuracion para campos de fondo derivados del IFS."""
     default_field: str = "none"   # "none", "theta_e_850", "grad_theta_e_850",
@@ -194,6 +215,8 @@ class AppConfig:
     ecmwf: ECMWFConfig = field(default_factory=ECMWFConfig)
     occlusion: OcclusionConfig = field(default_factory=OcclusionConfig)
     background_field: BackgroundFieldConfig = field(default_factory=BackgroundFieldConfig)
+    precipitation: PrecipitationConfig = field(default_factory=PrecipitationConfig)
+    wind_vectors: WindVectorsConfig = field(default_factory=WindVectorsConfig)
 
 
 def load_config(config_path: str | Path | None = None) -> AppConfig:
@@ -223,4 +246,6 @@ def load_config(config_path: str | Path | None = None) -> AppConfig:
         ecmwf=ECMWFConfig(**raw.get("ecmwf", {})),
         occlusion=OcclusionConfig(**raw.get("occlusion", {})),
         background_field=BackgroundFieldConfig(**raw.get("background_field", {})),
+        precipitation=PrecipitationConfig(**raw.get("precipitation", {})),
+        wind_vectors=WindVectorsConfig(**raw.get("wind_vectors", {})),
     )

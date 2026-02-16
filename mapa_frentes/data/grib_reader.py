@@ -142,6 +142,16 @@ def read_grib_files(
         )
     logger.info("MSL leida: shape=%s", msl.shape)
 
+    # --- 1b. Leer precipitacion total (opcional, solo en forecast steps) ---
+    tp = _read_variable(sfc_path, shortName="tp")
+    if tp is None:
+        tp = _read_variable(sfc_path, shortName="tp", typeOfLevel="surface")
+    if tp is not None:
+        logger.info("TP leida: shape=%s, min=%.4f, max=%.4f",
+                     tp.shape, float(tp.min()), float(tp.max()))
+    else:
+        logger.info("TP no disponible (normal en step=0 / analisis)")
+
     # --- 2. Leer variables a multiples niveles de presion ---
     # Intentar primero del fichero de presion, luego del de superficie
     # (el SCDA puede meter todo en un solo fichero)
@@ -178,6 +188,8 @@ def read_grib_files(
 
     ds = xr.Dataset()
     ds["msl"] = msl
+    if tp is not None:
+        ds["tp"] = tp
 
     # Añadir todas las variables de niveles de presion
     for var_name, var_data in pl_vars.items():

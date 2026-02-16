@@ -254,3 +254,17 @@ def _compute_humidity_850(ds, lats, lons):
     return DerivedField(
         data=q_gkg, label="q 850 hPa", units="g/kg", cmap="YlGnBu",
     )
+
+
+def compute_precipitation(ds: xr.Dataset) -> np.ndarray | None:
+    """Calcula precipitacion en mm desde el dataset.
+
+    Returns:
+        Array 2D de precipitacion en mm, o None si no hay datos tp.
+    """
+    if "tp" not in ds:
+        return None
+    tp = _ensure_2d(ds["tp"].values)
+    tp_mm = tp * 1000.0  # ECMWF tp viene en metros de agua
+    tp_mm = np.clip(tp_mm, 0, None)
+    return smooth_field(tp_mm, sigma=1.0)

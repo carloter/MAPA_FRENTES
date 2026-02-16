@@ -1,10 +1,11 @@
-"""Renderizado de isobaras, etiquetas A/B y campos de fondo en el mapa."""
+"""Renderizado de isobaras, etiquetas A/B, campos de fondo y vectores de viento."""
 
 import numpy as np
+import xarray as xr
 import cartopy.crs as ccrs
 import matplotlib.colors as mcolors
 from matplotlib.axes import Axes
-from mpl_toolkits.axes_grid1.inset_locator import inset_axes  # <-- NUEVO
+from mpl_toolkits.axes_grid1.inset_locator import inset_axes
 
 from mapa_frentes.config import AppConfig
 from mapa_frentes.analysis.pressure_centers import PressureCenter
@@ -80,7 +81,11 @@ def draw_pressure_labels(
         color = pc_cfg.h_color if center.type == "H" else pc_cfg.l_color
         base_label = pc_cfg.high_label if center.type == "H" else pc_cfg.low_label
 
-        if center.primary:
+        # Borrascas > 1005 hPa: minuscula (débiles)
+        if center.type == "L" and center.value > 1005:
+            label = base_label.lower()
+            fontsize = pc_cfg.fontsize - 2
+        elif center.primary:
             label = base_label.upper()
             fontsize = pc_cfg.fontsize + 2
         else:
@@ -171,6 +176,10 @@ def draw_background_field(
     vmin = float(np.nanmin(data))
     vmax = float(np.nanmax(data))
 
+    # Evitar crash si todos los valores son iguales
+    if vmin >= vmax:
+        return
+
     if derived.center_zero:
         # Simetrico alrededor de 0
         abs_max = max(abs(vmin), abs(vmax))
@@ -224,4 +233,108 @@ def draw_background_field(
         ax._bg_cbar.ax.yaxis.set_major_formatter("{x:.0f}")
     except Exception:
         pass
+
+
+def draw_precipitation(
+    ax: Axes,
+    ds: xr.Dataset,
+    lons: np.ndarray,
+    lats: np.ndarray,
+    cfg: AppConfig,
+) -> None:
+    """Dibuja precipitacion como overlay transparente.
+
+    Valores por debajo del umbral configurado son completamente transparentes.
+    """
+    from mapa_frentes.analysis.derived_fields import compute_precipitation
+
+    precip_mm = compute_precipitation(ds)
+    if precip_mm is None:
+        return
+
+    vmax = float(np.nanmax(precip_mm))
+    pcfg = cfg.precipitation
+    if vmax <= pcfg.threshold_mm:
+        return  # nada que dibujar
+
+    lon2d, lat2d = np.meshgrid(lons, lats)
+
+    # Niveles desde el umbral hasta el maximo
+    levels = np.linspace(pcfg.threshold_mm, vmax, pcfg.num_levels)
+
+    ax.contourf(
+        lon2d, lat2d, precip_mm,
+        levels=levels,
+        cmap=pcfg.cmap,
+        alpha=pcfg.alpha,
+        transform=ccrs.PlateCarree(),
+        zorder=1.8,
+        extend="max",
+    )
+
+
+def draw_wind_vectors(
+    ax: Axes,
+    ds: xr.Dataset,
+    lons: np.ndarray,
+    lats: np.ndarray,
+    level: int,
+    cfg: AppConfig,
+) -> None:
+    """Dibuja vectores de viento (quiver) a un nivel de presion dado.
+
+    Args:
+        ax: Axes de matplotlib con proyeccion cartopy.
+        ds: Dataset con variables u{level} y v{level}.
+        lons: Array 1D de longitudes.
+        lats: Array 1D de latitudes.
+        level: Nivel de presion en hPa (850, 700, 500).
+        cfg: Configuracion de la app.
+    """
+    u_name = f"u{level}"
+    v_name = f"v{level}"
+    if u_name not in ds or v_name not in ds:
+        return
+
+    wv_cfg = cfg.wind_vectors
+    thin = wv_cfg.thin_factor
+
+    u = ds[u_name].values
+    v = ds[v_name].values
+    # Eliminar dimensiones extra (tiempo, etc.)
+    while u.ndim > 2:
+        u = u[0]
+    while v.ndim > 2:
+        v = v[0]
+
+    # Convertir a nudos
+    u_kt = u * 1.94384
+    v_kt = v * 1.94384
+
+    # Thinning: cada N puntos
+    lon2d, lat2d = np.meshgrid(lons, lats)
+    u_thin = u_kt[::thin, ::thin]
+    v_thin = v_kt[::thin, ::thin]
+    lon_thin = lon2d[::thin, ::thin]
+    lat_thin = lat2d[::thin, ::thin]
+
+    q = ax.quiver(
+        lon_thin, lat_thin, u_thin, v_thin,
+        transform=ccrs.PlateCarree(),
+        scale=wv_cfg.scale,
+        width=wv_cfg.width,
+        color=wv_cfg.color,
+        alpha=wv_cfg.alpha,
+        zorder=3,
+    )
+
+    # Leyenda de escala
+    ax.quiverkey(
+        q, 0.92, 0.02, 20,
+        "20 kt",
+        labelpos="W",
+        coordinates="axes",
+        fontproperties={"size": 6},
+        labelsep=0.03,
+    )
 

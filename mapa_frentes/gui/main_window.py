@@ -194,6 +194,24 @@ class MainWindow(QMainWindow):
 
         toolbar.addSeparator()
 
+        # Overlays opcionales
+        self.precip_check = QCheckBox("Precip")
+        self.precip_check.setToolTip("Superponer precipitacion acumulada")
+        self.precip_check.toggled.connect(lambda: self._refresh_map())
+        toolbar.addWidget(self.precip_check)
+
+        self.wind_850_check = QCheckBox("Viento 850")
+        self.wind_850_check.setToolTip("Superponer vectores de viento a 850 hPa")
+        self.wind_850_check.toggled.connect(lambda: self._refresh_map())
+        toolbar.addWidget(self.wind_850_check)
+
+        self.wind_700_check = QCheckBox("Viento 700")
+        self.wind_700_check.setToolTip("Superponer vectores de viento a 700 hPa")
+        self.wind_700_check.toggled.connect(lambda: self._refresh_map())
+        toolbar.addWidget(self.wind_700_check)
+
+        toolbar.addSeparator()
+
         # Mosaico
         self.act_mosaic = QAction("Mosaico", self)
         self.act_mosaic.setCheckable(True)
@@ -395,14 +413,16 @@ class MainWindow(QMainWindow):
 
             self._push_undo()
             self.fronts = compute_tfp_fronts(self.ds, self.cfg)
-            self.fronts = classify_fronts(self.fronts, self.ds, self.cfg)
 
-            # Asociar frentes a centros de presion
+            # Asociar a centros ANTES de clasificar (el clasificador necesita los centros)
             if self.centers:
                 from mapa_frentes.fronts.association import associate_fronts_to_centers
                 self.fronts = associate_fronts_to_centers(
                     self.fronts, self.centers, self.cfg,
                 )
+            self.fronts = classify_fronts(
+                self.fronts, self.ds, self.cfg, centers=self.centers
+            )
 
             # Lineas de inestabilidad
             instab_lines = detect_instability_lines(self.ds, self.cfg)
@@ -771,6 +791,17 @@ class MainWindow(QMainWindow):
             draw_isobars(ax, msl_smooth, lons, lats, levels, self.cfg)
             draw_pressure_labels(ax, self.centers, self.cfg)
 
+            # Overlays opcionales
+            if self.precip_check.isChecked():
+                from mapa_frentes.plotting.isobar_renderer import draw_precipitation
+                draw_precipitation(ax, self.ds, lons, lats, self.cfg)
+            if self.wind_850_check.isChecked():
+                from mapa_frentes.plotting.isobar_renderer import draw_wind_vectors
+                draw_wind_vectors(ax, self.ds, lons, lats, 850, self.cfg)
+            if self.wind_700_check.isChecked():
+                from mapa_frentes.plotting.isobar_renderer import draw_wind_vectors
+                draw_wind_vectors(ax, self.ds, lons, lats, 700, self.cfg)
+
             # Titulo
             time_str = ""
             for coord_name in ("time", "valid_time"):
@@ -859,6 +890,17 @@ class MainWindow(QMainWindow):
                 # Isobaras
                 draw_isobars(ax, msl_smooth, lons, lats, levels, self.cfg)
                 draw_pressure_labels(ax, self.centers, self.cfg)
+
+                # Overlays opcionales
+                if self.precip_check.isChecked():
+                    from mapa_frentes.plotting.isobar_renderer import draw_precipitation
+                    draw_precipitation(ax, self.ds, lons, lats, self.cfg)
+                if self.wind_850_check.isChecked():
+                    from mapa_frentes.plotting.isobar_renderer import draw_wind_vectors
+                    draw_wind_vectors(ax, self.ds, lons, lats, 850, self.cfg)
+                if self.wind_700_check.isChecked():
+                    from mapa_frentes.plotting.isobar_renderer import draw_wind_vectors
+                    draw_wind_vectors(ax, self.ds, lons, lats, 700, self.cfg)
 
             # Frentes (mismos en todos los paneles)
             if self.fronts and len(self.fronts) > 0:

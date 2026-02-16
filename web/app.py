@@ -407,6 +407,290 @@ async def get_field_colorbar(
     }
 
 
+def _render_precipitation_png(
+    ds,
+    lats: np.ndarray,
+    lons: np.ndarray,
+    cfg,
+    width_px: int = 1400,
+) -> bytes:
+    """Renderiza precipitacion como PNG transparente en Web Mercator."""
+    from scipy.interpolate import RegularGridInterpolator
+    from mapa_frentes.analysis.derived_fields import compute_precipitation
+
+    precip_mm = compute_precipitation(ds)
+    if precip_mm is None:
+        logger.info("Precipitacion render: compute_precipitation devolvio None")
+        return b""
+
+    pcfg = cfg.precipitation
+    vmax = float(np.nanmax(precip_mm))
+    logger.info("Precipitacion render: max=%.2f mm, umbral=%.2f mm", vmax, pcfg.threshold_mm)
+    if vmax <= pcfg.threshold_mm:
+        return b""
+
+    # Re-interpolar a espacio Mercator
+    merc_y = _lat_to_mercator_y(lats)
+    merc_y_min, merc_y_max = float(merc_y.min()), float(merc_y.max())
+    n_merc = len(lats)
+    merc_y_uniform = np.linspace(merc_y_min, merc_y_max, n_merc)
+    lats_merc = np.rad2deg(2 * np.arctan(np.exp(merc_y_uniform)) - np.pi / 2)
+
+    lat_sorted = lats if lats[0] < lats[-1] else lats[::-1]
+    data_sorted = precip_mm if lats[0] < lats[-1] else precip_mm[::-1, :]
+
+    interp = RegularGridInterpolator(
+        (lat_sorted, lons), data_sorted,
+        method="linear", bounds_error=False, fill_value=0,
+    )
+    lon2d_merc, lat2d_merc = np.meshgrid(lons, lats_merc)
+    data_merc = interp((lat2d_merc, lon2d_merc))
+
+    # Figure
+    merc_height = merc_y_max - merc_y_min
+    lon_width = float(lons.max() - lons.min())
+    aspect = merc_height / lon_width if lon_width > 0 else 1.0
+    height_px = max(int(width_px * aspect), 100)
+
+    dpi = 100
+    fig = plt.figure(figsize=(width_px / dpi, height_px / dpi), dpi=dpi)
+    ax = fig.add_axes([0, 0, 1, 1])
+    ax.set_axis_off()
+
+    levels = np.linspace(pcfg.threshold_mm, vmax, pcfg.num_levels)
+    lon2d_plot, merc2d_plot = np.meshgrid(lons, merc_y_uniform)
+    ax.contourf(
+        lon2d_plot, merc2d_plot, data_merc,
+        levels=levels, cmap=pcfg.cmap,
+        alpha=pcfg.alpha, extend="max",
+    )
+    ax.set_xlim(float(lons.min()), float(lons.max()))
+    ax.set_ylim(merc_y_min, merc_y_max)
+    ax.set_aspect("auto")
+
+    buf = io.BytesIO()
+    fig.savefig(buf, format="png", transparent=True, pad_inches=0)
+    plt.close(fig)
+    buf.seek(0)
+    return buf.read()
+
+
+def _render_wind_vectors_png(
+    ds,
+    lats: np.ndarray,
+    lons: np.ndarray,
+    level: int,
+    cfg,
+    width_px: int = 1400,
+) -> bytes:
+    """Renderiza vectores de viento como PNG transparente en Web Mercator.
+
+    La componente v se escala por la derivada de la proyeccion Mercator
+    para que las flechas apunten en la direccion correcta en el mapa.
+    """
+    from scipy.interpolate import RegularGridInterpolator
+
+    u_name, v_name = f"u{level}", f"v{level}"
+    if u_name not in ds or v_name not in ds:
+        return b""
+
+    wv_cfg = cfg.wind_vectors
+    thin = wv_cfg.thin_factor
+
+    u = ds[u_name].values
+    v = ds[v_name].values
+    while u.ndim > 2:
+        u = u[0]
+    while v.ndim > 2:
+        v = v[0]
+
+    u_kt = u * 1.94384
+    v_kt = v * 1.94384
+
+    # Re-interpolar a espacio Mercator
+    merc_y = _lat_to_mercator_y(lats)
+    merc_y_min, merc_y_max = float(merc_y.min()), float(merc_y.max())
+    n_merc = len(lats)
+    merc_y_uniform = np.linspace(merc_y_min, merc_y_max, n_merc)
+    lats_merc = np.rad2deg(2 * np.arctan(np.exp(merc_y_uniform)) - np.pi / 2)
+
+    lat_sorted = lats if lats[0] < lats[-1] else lats[::-1]
+    u_sorted = u_kt if lats[0] < lats[-1] else u_kt[::-1, :]
+    v_sorted = v_kt if lats[0] < lats[-1] else v_kt[::-1, :]
+
+    interp_u = RegularGridInterpolator(
+        (lat_sorted, lons), u_sorted,
+        method="linear", bounds_error=False, fill_value=0,
+    )
+    interp_v = RegularGridInterpolator(
+        (lat_sorted, lons), v_sorted,
+        method="linear", bounds_error=False, fill_value=0,
+    )
+    lon2d_merc, lat2d_merc = np.meshgrid(lons, lats_merc)
+    u_merc = interp_u((lat2d_merc, lon2d_merc))
+    v_merc = interp_v((lat2d_merc, lon2d_merc))
+
+    # Escalar v por la derivada de Mercator: dy/dlat = 1/cos(lat)
+    # Esto corrige la distorsion para que las flechas apunten bien
+    cos_lat = np.cos(np.deg2rad(lat2d_merc))
+    cos_lat = np.clip(cos_lat, 0.1, None)
+    v_merc_scaled = v_merc / cos_lat
+
+    # Thinning
+    lon2d_plot, merc2d_plot = np.meshgrid(lons, merc_y_uniform)
+    u_thin = u_merc[::thin, ::thin]
+    v_thin = v_merc_scaled[::thin, ::thin]
+    lon_thin = lon2d_plot[::thin, ::thin]
+    merc_thin = merc2d_plot[::thin, ::thin]
+
+    # Figure - alta resolucion
+    merc_height = merc_y_max - merc_y_min
+    lon_width = float(lons.max() - lons.min())
+    aspect = merc_height / lon_width if lon_width > 0 else 1.0
+    height_px = max(int(width_px * aspect), 100)
+
+    dpi = 150
+    fig = plt.figure(figsize=(width_px / dpi, height_px / dpi), dpi=dpi)
+    ax = fig.add_axes([0, 0, 1, 1])
+    ax.set_axis_off()
+
+    # En web el sistema de coordenadas (grados x Mercator) es distinto a Cartopy,
+    # factores configurables en config.yaml: web_scale_factor, web_width_factor
+    web_scale = wv_cfg.scale * wv_cfg.web_scale_factor
+    web_width = wv_cfg.width * wv_cfg.web_width_factor
+    ax.quiver(
+        lon_thin, merc_thin, u_thin, v_thin,
+        angles="xy",
+        scale=web_scale,
+        scale_units="width",
+        width=web_width,
+        color=wv_cfg.color,
+        alpha=wv_cfg.alpha,
+        headwidth=4, headlength=5, headaxislength=4,
+    )
+    ax.set_xlim(float(lons.min()), float(lons.max()))
+    ax.set_ylim(merc_y_min, merc_y_max)
+    ax.set_aspect("auto")
+
+    buf = io.BytesIO()
+    fig.savefig(buf, format="png", transparent=True, pad_inches=0)
+    plt.close(fig)
+    buf.seek(0)
+    return buf.read()
+
+
+def _empty_png() -> bytes:
+    """Genera un PNG transparente 1x1 (para respuestas vacias sin error 404)."""
+    fig = plt.figure(figsize=(1, 1), dpi=1)
+    ax = fig.add_axes([0, 0, 1, 1])
+    ax.set_axis_off()
+    buf = io.BytesIO()
+    fig.savefig(buf, format="png", transparent=True, pad_inches=0)
+    plt.close(fig)
+    buf.seek(0)
+    return buf.read()
+
+
+@app.get("/api/precipitation/status")
+async def get_precipitation_status():
+    """Devuelve si hay datos de precipitacion disponibles."""
+    if state.ds is None:
+        return {"available": False, "reason": "No hay datos cargados"}
+    if "tp" not in state.ds:
+        return {"available": False, "reason": "Sin datos de precipitacion. Cargue con step > 0 (ej: T+024)"}
+    tp_vals = state.ds["tp"].values
+    while tp_vals.ndim > 2:
+        tp_vals = tp_vals[0]
+    tp_max = float(np.nanmax(tp_vals))
+    tp_mm = tp_max * 1000.0
+    logger.info("Precipitacion status: tp_max=%.6f m (%.2f mm)", tp_max, tp_mm)
+    if tp_mm <= state.cfg.precipitation.threshold_mm:
+        return {"available": False, "reason": f"Precipitacion maxima = {tp_mm:.1f} mm (bajo umbral {state.cfg.precipitation.threshold_mm} mm). Use step mayor."}
+    return {"available": True, "tp_max_mm": round(tp_mm, 2)}
+
+
+@app.get("/api/precipitation/image")
+async def get_precipitation_image():
+    """Devuelve PNG transparente con precipitacion acumulada."""
+    if state.ds is None:
+        raise HTTPException(400, "No hay datos cargados.")
+
+    png_bytes = _render_precipitation_png(
+        state.ds, state.lats, state.lons, state.cfg,
+    )
+    if not png_bytes:
+        logger.info("Precipitacion: sin datos significativos (tp no disponible o < umbral)")
+        png_bytes = _empty_png()
+
+    return StreamingResponse(io.BytesIO(png_bytes), media_type="image/png")
+
+
+@app.get("/api/wind_vectors/{level}/image")
+async def get_wind_vectors_image(level: int):
+    """Devuelve PNG transparente con vectores de viento a un nivel dado (850, 700)."""
+    if state.ds is None:
+        raise HTTPException(400, "No hay datos cargados.")
+    if level not in (500, 700, 850):
+        raise HTTPException(400, f"Nivel no soportado: {level}. Use 500, 700 o 850.")
+
+    png_bytes = _render_wind_vectors_png(
+        state.ds, state.lats, state.lons, level, state.cfg,
+    )
+    if not png_bytes:
+        raise HTTPException(404, f"No hay datos de viento a {level} hPa.")
+
+    return StreamingResponse(io.BytesIO(png_bytes), media_type="image/png")
+
+
+@app.get("/api/wind_vectors/{level}/data")
+async def get_wind_vectors_data(level: int):
+    """Devuelve datos de viento thinned como JSON para dibujar en canvas Leaflet."""
+    if state.ds is None:
+        raise HTTPException(400, "No hay datos cargados.")
+    if level not in (500, 700, 850):
+        raise HTTPException(400, f"Nivel no soportado: {level}. Use 500, 700 o 850.")
+
+    u_name, v_name = f"u{level}", f"v{level}"
+    if u_name not in state.ds or v_name not in state.ds:
+        raise HTTPException(404, f"No hay datos de viento a {level} hPa.")
+
+    wv_cfg = state.cfg.wind_vectors
+    thin = wv_cfg.thin_factor
+
+    u = state.ds[u_name].values.copy()
+    v = state.ds[v_name].values.copy()
+    while u.ndim > 2:
+        u = u[0]
+    while v.ndim > 2:
+        v = v[0]
+
+    # m/s a nudos
+    u_kt = u * 1.94384
+    v_kt = v * 1.94384
+
+    lats = state.lats
+    lons = state.lons
+
+    # Thinning
+    u_thin = u_kt[::thin, ::thin]
+    v_thin = v_kt[::thin, ::thin]
+    lat_thin = lats[::thin]
+    lon_thin = lons[::thin]
+
+    # Construir lista plana de puntos
+    lon2d, lat2d = np.meshgrid(lon_thin, lat_thin)
+    mask = np.isfinite(u_thin) & np.isfinite(v_thin)
+
+    return JSONResponse({
+        "lat": lat2d[mask].round(2).tolist(),
+        "lon": lon2d[mask].round(2).tolist(),
+        "u": u_thin[mask].round(1).tolist(),
+        "v": v_thin[mask].round(1).tolist(),
+        "color": wv_cfg.color,
+        "alpha": wv_cfg.alpha,
+    })
+
+
 @app.get("/api/isobars")
 async def get_isobars():
     """Devuelve isobaras como GeoJSON LineStrings."""
@@ -427,6 +711,14 @@ async def get_centers():
         raise HTTPException(400, "No hay datos cargados.")
 
     pc_cfg = state.cfg.pressure_centers
+
+    def _center_label(c):
+        base = pc_cfg.high_label if c.type == "H" else pc_cfg.low_label
+        # Borrascas > 1005 hPa: minuscula (débiles)
+        if c.type == "L" and c.value > 1005:
+            return base.lower()
+        return base.upper() if c.primary else base.lower()
+
     return [
         {
             "id": c.id,
@@ -436,7 +728,7 @@ async def get_centers():
             "value": round(c.value, 1),
             "primary": c.primary,
             "name": c.name,
-            "label": pc_cfg.high_label if c.type == "H" else pc_cfg.low_label,
+            "label": _center_label(c),
         }
         for c in state.centers
     ]
@@ -453,11 +745,12 @@ async def detect_fronts():
     from mapa_frentes.fronts.association import associate_fronts_to_centers
 
     collection = compute_tfp_fronts(state.ds, state.cfg)
-    collection = classify_fronts(collection, state.ds, state.cfg)
+    # Asociar a centros ANTES de clasificar (el clasificador necesita los centros)
     if state.centers:
         collection = associate_fronts_to_centers(
             collection, state.centers, state.cfg,
         )
+    collection = classify_fronts(collection, state.ds, state.cfg, centers=state.centers)
     state.fronts = collection
     return collection_to_geojson(collection)
 
@@ -541,11 +834,15 @@ async def generate_from_center(center_id: str):
 async def export_map_png(
     field: str = Query("none"),
     clean: bool = Query(False),
+    wind_levels: list[int] = Query([], description="Niveles de viento: 850, 700, 500"),
+    precip: bool = Query(False, description="Incluir precipitacion"),
 ):
     """Exporta mapa en proyeccion Lambert (PNG 300 DPI) con simbologia WMO.
 
     - field: campo de fondo (o "none")
     - clean: si True, omite campo de fondo (solo basemap + isobaras + centros + frentes)
+    - wind_levels: niveles de viento a dibujar
+    - precip: incluir overlay de precipitacion
     """
     if state.ds is None:
         raise HTTPException(400, "No hay datos cargados.")
@@ -553,6 +850,7 @@ async def export_map_png(
     from mapa_frentes.plotting.map_canvas import create_map_figure
     from mapa_frentes.plotting.isobar_renderer import (
         draw_isobars, draw_pressure_labels, draw_background_field,
+        draw_precipitation, draw_wind_vectors,
     )
     from mapa_frentes.plotting.front_renderer import draw_fronts
 
@@ -564,6 +862,10 @@ async def export_map_png(
         if derived is not None:
             draw_background_field(ax, derived, state.lons, state.lats, state.cfg)
 
+    # Precipitacion
+    if precip:
+        draw_precipitation(ax, state.ds, state.lons, state.lats, state.cfg)
+
     # Isobaras
     if state.msl_smooth is not None:
         draw_isobars(ax, state.msl_smooth, state.lons, state.lats, state.levels, state.cfg)
@@ -571,6 +873,11 @@ async def export_map_png(
     # Centros de presion
     if state.centers:
         draw_pressure_labels(ax, state.centers, state.cfg)
+
+    # Vectores de viento opcionales
+    for wl in wind_levels:
+        if wl in (500, 700, 850):
+            draw_wind_vectors(ax, state.ds, state.lons, state.lats, wl, state.cfg)
 
     # Frentes con simbolos WMO (MetPy)
     # skip_orient=True: el usuario ya ajustó la dirección con flip en la web
@@ -604,6 +911,8 @@ async def export_mosaic_png(
     cols: int = Query(3),
     rows: int = Query(2),
     fields: list[str] = Query([]),
+    wind_levels: list[int] = Query([], description="Niveles de viento: 850, 700, 500"),
+    precip: bool = Query(False, description="Incluir precipitacion"),
 ):
     """Exporta mosaico completo en proyeccion Lambert (PNG 300 DPI).
 
@@ -615,6 +924,7 @@ async def export_mosaic_png(
     from mapa_frentes.plotting.map_canvas import build_projection, apply_base_cartography
     from mapa_frentes.plotting.isobar_renderer import (
         draw_isobars, draw_pressure_labels, draw_background_field,
+        draw_precipitation, draw_wind_vectors,
     )
     from mapa_frentes.plotting.front_renderer import draw_fronts
 
@@ -653,6 +963,10 @@ async def export_mosaic_png(
             if derived is not None:
                 draw_background_field(ax, derived, state.lons, state.lats, state.cfg)
 
+        # Precipitacion
+        if precip:
+            draw_precipitation(ax, state.ds, state.lons, state.lats, state.cfg)
+
         # Isobaras
         if state.msl_smooth is not None:
             draw_isobars(ax, state.msl_smooth, state.lons, state.lats, state.levels, state.cfg)
@@ -660,6 +974,11 @@ async def export_mosaic_png(
         # Centros
         if state.centers:
             draw_pressure_labels(ax, state.centers, state.cfg)
+
+        # Vectores de viento
+        for wl in wind_levels:
+            if wl in (500, 700, 850):
+                draw_wind_vectors(ax, state.ds, state.lons, state.lats, wl, state.cfg)
 
         # Frentes
         if len(state.fronts) > 0:
