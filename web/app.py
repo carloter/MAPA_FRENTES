@@ -82,21 +82,42 @@ def _compute_viewport_range(
     west: float | None,
     east: float | None,
 ) -> tuple[float, float]:
-    """Calcula vmin/vmax del campo restringido al viewport visible."""
+    """Calcula vmin/vmax como percentiles 5 y 95 (viewport si existe)."""
+
+    def _p05_p95(arr: np.ndarray) -> tuple[float, float]:
+        vals = arr[np.isfinite(arr)]
+        if vals.size == 0:
+            # fallback duro si todo es NaN
+            return 0.0, 1.0
+        vmin = float(np.percentile(vals, 5))
+        vmax = float(np.percentile(vals, 95))
+        # evitar rango degenerado (todo casi constante)
+        if not np.isfinite(vmin) or not np.isfinite(vmax) or vmin == vmax:
+            mn = float(np.nanmin(vals))
+            mx = float(np.nanmax(vals))
+            if mn == mx:
+                eps = 1e-6 if mn == 0 else abs(mn) * 1e-3
+                return mn - eps, mx + eps
+            return mn, mx
+        return vmin, vmax
+
+    # Si no hay viewport, percentiles del campo completo
     if south is None or north is None or west is None or east is None:
-        return float(np.nanmin(data)), float(np.nanmax(data))
+        return _p05_p95(data)
 
     lat_mask = (lats >= south) & (lats <= north)
     lon_mask = (lons >= west) & (lons <= east)
 
+    # Si el viewport no cae dentro de la malla, usa campo completo
     if not np.any(lat_mask) or not np.any(lon_mask):
-        return float(np.nanmin(data)), float(np.nanmax(data))
+        return _p05_p95(data)
 
     subset = data[np.ix_(lat_mask, lon_mask)]
-    if subset.size == 0 or np.all(np.isnan(subset)):
-        return float(np.nanmin(data)), float(np.nanmax(data))
+    if subset.size == 0 or np.all(~np.isfinite(subset)):
+        return _p05_p95(data)
 
-    return float(np.nanmin(subset)), float(np.nanmax(subset))
+    return _p05_p95(subset)
+
 
 
 def _lat_to_mercator_y(lat_deg: np.ndarray) -> np.ndarray:
@@ -742,12 +763,19 @@ async def detect_fronts():
 
     from mapa_frentes.fronts.tfp import compute_tfp_fronts
     from mapa_frentes.fronts.classifier import classify_fronts
-    from mapa_frentes.fronts.association import associate_fronts_to_centers
+    from mapa_frentes.fronts.association import (
+        associate_fronts_to_centers,
+        filter_fronts_near_lows,
+    )
 
     collection = compute_tfp_fronts(state.ds, state.cfg)
     # Asociar a centros ANTES de clasificar (el clasificador necesita los centros)
     if state.centers:
         collection = associate_fronts_to_centers(
+            collection, state.centers, state.cfg,
+        )
+        # Filtrar frentes no asociados a borrascas
+        collection = filter_fronts_near_lows(
             collection, state.centers, state.cfg,
         )
     collection = classify_fronts(collection, state.ds, state.cfg, centers=state.centers)

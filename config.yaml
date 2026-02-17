@@ -30,59 +30,44 @@ pressure_centers:
   high_label: "A"            # etiqueta para anticiclon (estilo AEMET)
   low_label: "B"             # etiqueta para borrasca (estilo AEMET)
 
-# tfp:
-#   smooth_sigma: 4.5                # menos suavizado = más detalle frontal
-#   gradient_threshold: 2.0e-6       # umbral más bajo = detecta gradientes más débiles
-
-#   # detección
-#   dbscan_eps_deg: 2.0              # algo más permisivo para agrupar puntos
-#   dbscan_min_samples: 3            # menos muestras mínimas = más clusters
-#   min_front_points: 2              # acepta frentes con menos puntos
-
-#   # geometría
-#   simplify_tolerance_deg: 0.25     # menos simplificación = conserva más detalle
-#   max_hop_deg: 2.0                 # permite saltos algo mayores para conectar segmentos
-#   angular_weight: 0.60             # menos rigidez angular = traza más flexible
-#   spline_smoothing: 0.35
-#   merge_distance_deg: 2.0          # fusiona segmentos más distantes
-
-#   # filtros físicos
-#   use_mslp_filter: true            # mantener para evitar falsos en dorsales
-#   mslp_laplacian_sigma: 6.5
-
-#   use_frontogenesis_filter: true
-#   frontogenesis_percentile: 5      # solo filtra los puntos más débiles (era 10)
-
-#   # más frentes permitidos
-#   min_front_length_deg: 1.5        # acepta frentes más cortos (era 2.8)
-#   max_fronts: 150                  # más capacidad (era 90)
-  
 tfp:
-  smooth_sigma: 4.5                # menos suavizado = más detalle frontal
-  gradient_threshold: 1.0e-6       # umbral más bajo = detecta gradientes más débiles
+  smooth_sigma: 8.0                # FUERTE: elimina ruido subsinotico (Sansom&Catto usan ~96 pases a 0.25deg)
+  gradient_threshold: 2.5e-6       # ALTO: solo zonas baroclinas fuertes (frentes reales)
 
-  # detección
-  dbscan_eps_deg: 3.0             # algo más permisivo para agrupar puntos
-  dbscan_min_samples: 2              # menos muestras mínimas = más clusters (debe ser entero)
-  min_front_points: 1             # acepta frentes con menos puntos
+  # detección (legacy DBSCAN - solo si use_contour_method: false)
+  dbscan_eps_deg: 3.0
+  dbscan_min_samples: 3
+  min_front_points: 6              # mínimo 6 vértices por segmento de contorno
 
   # geometría
-  simplify_tolerance_deg: 0.25     # menos simplificación = conserva más detalle
-  max_hop_deg: 3.0                 # permite saltos algo mayores para conectar segmentos
-  angular_weight: 0.60             # menos rigidez angular = traza más flexible
-  spline_smoothing: 0.35
-  merge_distance_deg: 2.0          # fusiona segmentos más distantes
+  simplify_tolerance_deg: 0.25
+  max_hop_deg: 3.0
+  angular_weight: 0.60
+  spline_smoothing: 0.5            # suavizado spline más fuerte para frentes más lisos
+  merge_distance_deg: 2.0
 
   # filtros físicos
-  use_mslp_filter: true            # mantener para evitar falsos en dorsales
-  mslp_laplacian_sigma: 6.5
+  use_mslp_filter: true
+  mslp_laplacian_sigma: 6.0        # suavizado MSLP sinóptico
 
   use_frontogenesis_filter: true
-  frontogenesis_percentile: 1      # solo filtra los puntos más débiles (era 10)
+  frontogenesis_percentile: 8
 
-  # más frentes permitidos
-  min_front_length_deg: 1.5        # acepta frentes más cortos (era 2.8)
-  max_fronts: 150                  # más capacidad (era 90)
+  min_front_length_deg: 5.0        # SOLO frentes largos (sinópticos, no mesoescala)
+  max_fronts: 30                   # AEMET dibuja ~15-20 en todo el dominio
+
+  # Método de extracción: contour-then-mask (Sansom & Catto 2024)
+  use_contour_method: true
+
+  # Diagnóstico F (Parfitt et al. 2017): F = (|grad_T|/escala) * (|vor|/|f|)
+  # Filtra gradientes termicos sin actividad dinámica (costas, orografia)
+  use_f_diagnostic: true
+  f_diagnostic_threshold: 0.15      # moderado: requiere gradiente Y vorticidad significativos
+
+  # Boost por vorticidad: reduce umbral de gradiente donde |vo850| es alto
+  use_vorticity_boost: true
+  vorticity_boost_threshold: 5.0e-5
+  vorticity_boost_factor: 0.5       # threshold * 0.5 = 1.25e-6 en zonas de alta vorticidad
 
 plotting:
   figsize: [18, 11]
@@ -110,6 +95,8 @@ center_fronts:
   gradient_cutoff_factor: 0.25
   spline_smoothing: 0.35
   max_association_distance_deg: 8
+  require_low_center: true       # solo frentes cerca de centros L (borrascas)
+  max_distance_to_low_deg: 12.0  # radio maximo alrededor de cada L
 
 temporal:
   enabled: true

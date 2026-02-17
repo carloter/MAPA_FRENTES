@@ -49,7 +49,9 @@ def compute_front_importance(
     lons = ds[lon_name].values
 
     # --- Factor 1: Longitud (25%) ---
-    length_deg = _polyline_length_deg(front.coords)
+    #length_deg = _polyline_length_deg(front.coords)
+    # si acepta lats/lons
+    length_deg = _polyline_length_deg(front.lats, front.lons)
     # Normalizar: 5° = 0, 20° = 1
     length_score = np.clip((length_deg - 5.0) / 15.0, 0, 1)
 

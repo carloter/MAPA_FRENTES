@@ -97,6 +97,62 @@ def associate_fronts_to_centers(
     return collection
 
 
+def filter_fronts_near_lows(
+    collection: FrontCollection,
+    centers: list[PressureCenter],
+    cfg: AppConfig,
+) -> FrontCollection:
+    """Filtra frentes que no estén cerca de ningún centro de baja presión.
+
+    Solo mantiene frentes cuyo punto más cercano a algún centro L esté
+    dentro de max_distance_to_low_deg. Los frentes ya asociados (center_id)
+    se mantienen siempre.
+    """
+    if not cfg.center_fronts.require_low_center:
+        return collection
+
+    lows = [c for c in centers if c.type == "L"]
+    if not lows:
+        logger.warning("No hay centros L: se mantienen todos los frentes")
+        return collection
+
+    max_dist = cfg.center_fronts.max_distance_to_low_deg
+    to_remove = []
+
+    for front in collection:
+        # Frentes ya asociados: mantener siempre
+        if front.center_id:
+            continue
+        # Líneas de inestabilidad: no filtrar
+        if front.front_type == FrontType.INSTABILITY_LINE:
+            continue
+
+        # Buscar distancia mínima a cualquier centro L
+        min_dist = float("inf")
+        for center in lows:
+            distances = np.sqrt(
+                (front.lats - center.lat) ** 2
+                + (front.lons - center.lon) ** 2
+            )
+            d = distances.min()
+            if d < min_dist:
+                min_dist = d
+
+        if min_dist > max_dist:
+            to_remove.append(front.id)
+
+    for fid in to_remove:
+        collection.remove(fid)
+
+    if to_remove:
+        logger.info(
+            "Filtro por proximidad a L: eliminados %d frentes lejanos, quedan %d",
+            len(to_remove), len(collection),
+        )
+
+    return collection
+
+
 def smooth_extend_to_center(
     front: Front,
     center: PressureCenter,

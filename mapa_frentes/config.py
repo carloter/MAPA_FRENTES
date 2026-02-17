@@ -80,6 +80,15 @@ class TFPConfig:
     frontogenesis_percentile: int = 25
     # Max fronts
     max_fronts: int = 15
+    # Vorticity boost: reduce gradient threshold where vorticity is high
+    use_vorticity_boost: bool = False
+    vorticity_boost_threshold: float = 5.0e-5  # |vor| > this activates boost
+    vorticity_boost_factor: float = 0.4         # gradient_threshold * this in high-vor zones
+    # F diagnostic (Parfitt et al. 2017): thermal gradient × vorticity / coriolis
+    use_f_diagnostic: bool = True
+    f_diagnostic_threshold: float = 1.0         # F > this to keep front point
+    # Contour method (Sansom & Catto 2024): contour-then-mask vs legacy DBSCAN
+    use_contour_method: bool = True
 
 
 @dataclass
@@ -129,6 +138,8 @@ class CenterFrontsConfig:
     gradient_cutoff_factor: float = 0.3
     spline_smoothing: float = 0.4
     max_association_distance_deg: float = 10.0
+    require_low_center: bool = True        # Solo mantener frentes cerca de centros L
+    max_distance_to_low_deg: float = 12.0  # Radio maximo de busqueda alrededor de L
 
 
 @dataclass

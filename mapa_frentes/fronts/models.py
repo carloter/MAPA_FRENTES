@@ -79,6 +79,7 @@ class FrontCollection:
     valid_time: str = ""
     model_run: str = ""
     description: str = ""
+    metadata: dict = field(default_factory=dict)
 
     def add(self, front: Front):
         self.fronts.append(front)

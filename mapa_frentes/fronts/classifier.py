@@ -1,10 +1,12 @@
-"""Clasificación de frentes frío/cálido/ocluido con detección robusta de oclusiones.
+"""Clasificación de frentes frío/cálido/ocluido (Hewson 1998).
 
-Método mejorado multi-criterio:
-1. Cálculo de cross products punto a punto (advección térmica)
-2. Clasificación usando posición relativa al centro L asociado (si existe)
-3. Segmentación de frentes mixtos (frio+calido) cerca de centros
-4. Detección robusta de oclusiones (estructura vertical, vorticidad, geometría)
+Método:
+1. Front speed (Hewson 1998, Eq. 4): V · (∇|∇θ_w| / |∇|∇θ_w||)
+   - speed < -K3 → COLD (frente empujado hacia aire cálido)
+   - speed > +K3 → WARM (frente empujado hacia aire frío)
+   - |speed| ≤ K3 → STATIONARY
+2. Segmentación de frentes mixtos cerca de centros L
+3. Detección robusta de oclusiones (estructura vertical multi-nivel)
 """
 
 import logging
@@ -17,15 +19,12 @@ from scipy.interpolate import RegularGridInterpolator
 from mapa_frentes.analysis.pressure_centers import PressureCenter
 from mapa_frentes.config import AppConfig
 from mapa_frentes.fronts.models import Front, FrontCollection, FrontType
-from mapa_frentes.utils.smoothing import smooth_field
 
 logger = logging.getLogger(__name__)
 
-# Umbrales
-PURITY_THRESHOLD = 0.60          # Bajado de 0.70: 60% basta para asignar tipo
-SIGNIFICANCE_THRESHOLD = 0.0
-MIXED_THRESHOLD = 0.25           # Si ambos signos superan 25%, considerar segmentar
-PROXIMITY_OCCLUDED_DEG = 2.5     # Distancia al centro para marcar segmento ocluido
+# Umbrales Hewson/Berry
+K3_FRONT_SPEED = 1.5             # m/s: umbral cold/warm vs stationary (Berry et al. 2011)
+PROXIMITY_OCCLUDED_DEG = 2.5     # grados: distancia al centro para marcar ocluido
 
 
 def classify_fronts(
@@ -34,18 +33,18 @@ def classify_fronts(
     cfg: AppConfig,
     centers: List[PressureCenter] | None = None,
 ) -> FrontCollection:
-    """Clasifica frentes usando advección térmica + geometría del centro.
+    """Clasifica frentes usando front speed de Hewson (1998).
 
     Pipeline:
-    1. Calcular cross products punto a punto para cada frente
-    2. Clasificar usando centro L asociado (si existe) o método clásico
-    3. Segmentar frentes mixtos cerca de centros (frio+calido+ocluido)
+    1. Calcular front_speed (Eq. 4) en cada punto del frente
+    2. Clasificar: cold / warm / stationary
+    3. Segmentar frentes mixtos cerca de centros L
     4. Detección robusta de oclusiones (multi-nivel, si habilitada)
     """
     if not collection.fronts:
         return collection
 
-    from mapa_frentes.fronts.tfp import _remove_time_dim, _ensure_2d, compute_theta_w
+    from mapa_frentes.fronts.tfp import _remove_time_dim, _ensure_2d
     ds = _remove_time_dim(ds)
 
     lat_name = "latitude" if "latitude" in ds.coords else "lat"
@@ -53,51 +52,91 @@ def classify_fronts(
     lats = ds[lat_name].values
     lons = ds[lon_name].values
 
-    # Campo térmico: theta_w suavizado (coherente con la detección TFP)
-    theta_w = compute_theta_w(ds)
-    theta_w = smooth_field(theta_w, sigma=cfg.tfp.smooth_sigma)
-
     u850 = _ensure_2d(ds["u850"].values)
     v850 = _ensure_2d(ds["v850"].values)
 
-    # Filtrar centros L
+    # Obtener ∇|∇θ_w| del metadata de la collection (calculado en tfp.py)
+    gmag_x = collection.metadata.get("gmag_x")
+    gmag_y = collection.metadata.get("gmag_y")
+    meta_lats = collection.metadata.get("lats")
+    meta_lons = collection.metadata.get("lons")
+
     low_centers = [c for c in (centers or []) if c.type == "L"]
 
-    # --- 1. Calcular señal térmica y clasificar ---
-    logger.info("Clasificando frentes por contraste térmico + geometría")
-    for front in collection.fronts:
-        signals = _compute_thermal_signal(
-            front, theta_w, lats, lons, u850, v850
+    if gmag_x is not None and gmag_y is not None:
+        # --- Método Hewson: front_speed ---
+        logger.info("Clasificando frentes por front_speed (Hewson 1998 Eq. 4)")
+
+        # Usar lats/lons del metadata (coherentes con el campo TFP)
+        field_lats = meta_lats if meta_lats is not None else lats
+        field_lons = meta_lons if meta_lons is not None else lons
+
+        # Interpoladores (se crean una vez, se usan para todos los frentes)
+        interp_gmx = RegularGridInterpolator(
+            (field_lats, field_lons), gmag_x,
+            bounds_error=False, fill_value=0,
         )
-        front.front_type = _classify_with_center(
-            front, signals, low_centers
+        interp_gmy = RegularGridInterpolator(
+            (field_lats, field_lons), gmag_y,
+            bounds_error=False, fill_value=0,
+        )
+        interp_u = RegularGridInterpolator(
+            (lats, lons), u850, bounds_error=False, fill_value=0,
+        )
+        interp_v = RegularGridInterpolator(
+            (lats, lons), v850, bounds_error=False, fill_value=0,
         )
 
-    # --- 2. Segmentar frentes mixtos cerca de centros ---
-    if low_centers:
-        new_fronts = []
-        to_remove = []
+        # 1. Clasificar cada frente
         for front in collection.fronts:
-            signals = _compute_thermal_signal(
-                front, theta_w, lats, lons, u850, v850
+            if front.front_type == FrontType.INSTABILITY_LINE:
+                continue
+            speeds = _compute_hewson_front_speed(
+                front, interp_gmx, interp_gmy, interp_u, interp_v,
             )
-            segments = _split_mixed_front(front, signals, low_centers)
-            if segments is not None:
-                to_remove.append(front.id)
-                new_fronts.extend(segments)
-                logger.info(
-                    "Frente %s segmentado en %d partes: %s",
-                    front.id[:8], len(segments),
-                    [s.front_type.value for s in segments],
+            front.front_type = _classify_from_speed(speeds)
+
+        # 2. Segmentar frentes mixtos cerca de centros L
+        if low_centers:
+            new_fronts = []
+            to_remove = []
+            for front in collection.fronts:
+                if front.front_type == FrontType.INSTABILITY_LINE:
+                    continue
+                speeds = _compute_hewson_front_speed(
+                    front, interp_gmx, interp_gmy, interp_u, interp_v,
                 )
+                segments = _split_mixed_front_by_speed(
+                    front, speeds, low_centers,
+                )
+                if segments is not None:
+                    to_remove.append(front.id)
+                    new_fronts.extend(segments)
+                    logger.info(
+                        "Frente %s segmentado en %d partes: %s",
+                        front.id[:8], len(segments),
+                        [s.front_type.value for s in segments],
+                    )
 
-        # Reemplazar frentes originales por segmentos
-        for fid in to_remove:
-            collection.remove(fid)
-        for nf in new_fronts:
-            collection.add(nf)
+            for fid in to_remove:
+                collection.remove(fid)
+            for nf in new_fronts:
+                collection.add(nf)
+    else:
+        logger.warning(
+            "No hay campos gmag_x/gmag_y en metadata. "
+            "Clasificacion por azimut del centro (fallback)."
+        )
+        for front in collection.fronts:
+            if front.front_type == FrontType.INSTABILITY_LINE:
+                continue
+            if low_centers:
+                ftype = _classify_by_center_azimuth(front, low_centers)
+                if ftype is not None:
+                    front.front_type = ftype
+            # else: mantener COLD por defecto
 
-    # --- 3. Detección robusta de oclusiones (si está habilitada) ---
+    # --- 3. Detección robusta de oclusiones (si habilitada) ---
     if cfg.occlusion.enabled and cfg.occlusion.use_multilevel:
         has_multilevel = ("t500" in ds and "t700" in ds and "t850" in ds)
         if has_multilevel:
@@ -106,7 +145,7 @@ def classify_fronts(
                 collection, ds, cfg, centers, lats, lons
             )
 
-    # --- Logging de resultados ---
+    # --- Logging ---
     counts = {}
     for f in collection:
         t = f.front_type.value
@@ -117,236 +156,85 @@ def classify_fronts(
 
 
 # ============================================================================
-# Cross products: advección térmica punto a punto
+# Front speed (Hewson 1998, Eq. 4)
 # ============================================================================
 
-def _compute_thermal_signal(
+def _compute_hewson_front_speed(
     front: Front,
-    theta_w: np.ndarray,
-    lats: np.ndarray,
-    lons: np.ndarray,
-    u850: np.ndarray,
-    v850: np.ndarray,
+    interp_gmx: RegularGridInterpolator,
+    interp_gmy: RegularGridInterpolator,
+    interp_u: RegularGridInterpolator,
+    interp_v: RegularGridInterpolator,
 ) -> np.ndarray:
-    """Calcula señal térmica con signo en cada punto del frente.
+    """Calcula front_speed (Hewson 1998 Eq. 4) en cada punto del frente.
 
-    Método: muestrear theta_w a varias distancias a ambos lados del frente
-    (perpendicular) y usar el máximo contraste. El signo lo da la dirección
-    del viento: si el viento sopla desde el lado frío → frente frío.
+    front_speed = V · (∇|∇θ_w| / |∇|∇θ_w||)
 
-    signal > 0 = frente frío (viento empuja aire frío hacia el lado cálido)
-    signal < 0 = frente cálido (viento empuja aire cálido hacia el lado frío)
+    Donde ∇|∇θ_w| apunta perpendicular al frente, hacia la zona donde
+    el gradiente térmico crece (hacia la zona baroclina).
 
-    Returns:
-        Array de señales térmicas, longitud = npoints del frente.
+    Negativo = cold front (viento empuja contorno hacia aire cálido)
+    Positivo = warm front (viento empuja contorno hacia aire frío)
     """
-    interp_tw = RegularGridInterpolator(
-        (lats, lons), theta_w, bounds_error=False, fill_value=np.nan
-    )
+    speeds = np.zeros(front.npoints)
+    pts = np.column_stack([front.lats, front.lons])
 
-    # Muestrear a múltiples distancias para captar gradientes anchos
-    sample_distances = [1.0, 2.0, 3.5, 5.0]
+    # Interpolacion vectorizada
+    gx_vals = interp_gmx(pts)
+    gy_vals = interp_gmy(pts)
+    u_vals = interp_u(pts)
+    v_vals = interp_v(pts)
 
-    signals = np.zeros(front.npoints)
+    gm = np.sqrt(gx_vals**2 + gy_vals**2)
+    valid = gm > 1e-15
 
-    for k in range(front.npoints):
-        lat, lon = front.lats[k], front.lons[k]
+    if np.any(valid):
+        nx = np.where(valid, gx_vals / np.where(valid, gm, 1.0), 0.0)
+        ny = np.where(valid, gy_vals / np.where(valid, gm, 1.0), 0.0)
+        speeds = u_vals * nx + v_vals * ny
 
-        # Tangente al frente en este punto
-        if k == 0:
-            dx = front.lons[min(k + 1, front.npoints - 1)] - lon
-            dy = front.lats[min(k + 1, front.npoints - 1)] - lat
-        elif k == front.npoints - 1:
-            dx = lon - front.lons[k - 1]
-            dy = lat - front.lats[k - 1]
-        else:
-            dx = front.lons[k + 1] - front.lons[k - 1]
-            dy = front.lats[k + 1] - front.lats[k - 1]
-
-        tang_norm = np.sqrt(dx**2 + dy**2)
-        if tang_norm < 1e-10:
-            continue
-
-        # Normal al frente (perpendicular, apunta hacia la "derecha" del frente)
-        nx = -dy / tang_norm
-        ny = dx / tang_norm
-
-        cos_lat = max(np.cos(np.radians(lat)), 0.1)
-
-        # Buscar el contraste máximo entre las distancias de muestreo
-        best_delta = 0.0
-        for dist in sample_distances:
-            pt_right = np.array([[lat + ny * dist, lon + nx * dist / cos_lat]])
-            pt_left = np.array([[lat - ny * dist, lon - nx * dist / cos_lat]])
-
-            tw_right = interp_tw(pt_right).item()
-            tw_left = interp_tw(pt_left).item()
-
-            if np.isnan(tw_right) or np.isnan(tw_left):
-                continue
-
-            delta = tw_right - tw_left
-            # Quedarse con el contraste de mayor magnitud
-            if abs(delta) > abs(best_delta):
-                best_delta = delta
-
-        if abs(best_delta) < 0.1:
-            # Contraste despreciable (< 0.1 K): sin señal
-            continue
-
-        # Componente del viento en la dirección normal
-        j = np.argmin(np.abs(lats - lat))
-        i = np.argmin(np.abs(lons - lon))
-        j = np.clip(j, 0, u850.shape[0] - 1)
-        i = np.clip(i, 0, u850.shape[1] - 1)
-        vn = u850[j, i] * nx + v850[j, i] * ny
-
-        # Señal normalizada: solo dirección, sin magnitud
-        # +1: viento empuja aire frío → frente frío
-        # -1: viento empuja aire cálido → frente cálido
-        #  0: viento o contraste térmico despreciable
-        if abs(vn) > 0.3:
-            signals[k] = np.sign(vn * best_delta)
-        else:
-            # Viento muy débil: usar solo el signo del contraste térmico
-            signals[k] = np.sign(best_delta)
-
-    return signals
+    return speeds
 
 
-# ============================================================================
-# Clasificación con geometría del centro
-# ============================================================================
-
-def _classify_with_center(
-    front: Front,
-    cross_products: np.ndarray,
-    low_centers: List[PressureCenter],
+def _classify_from_speed(
+    front_speeds: np.ndarray,
+    k3: float = K3_FRONT_SPEED,
 ) -> FrontType:
-    """Clasifica un frente usando advección térmica + posición relativa al centro L.
+    """Clasifica un frente por su velocidad media (Hewson 1998).
 
-    Prioridad:
-    1. Si la advección es clara (>PURITY_THRESHOLD) → COLD/WARM
-    2. Señal mixta: usar geometría del centro como desempate
-    (La proximidad al centro se usa en la segmentación, no aquí)
+    front_speed < -K3 → COLD (contorno se desplaza hacia aire cálido)
+    front_speed > +K3 → WARM (contorno se desplaza hacia aire frío)
+    |front_speed| ≤ K3 → STATIONARY
     """
-    significant = cross_products[np.abs(cross_products) > SIGNIFICANCE_THRESHOLD]
-    if len(significant) == 0:
+    valid = front_speeds != 0
+    if not np.any(valid):
+        return FrontType.COLD  # fallback
+
+    mean_speed = np.mean(front_speeds[valid])
+
+    if mean_speed < -k3:
         return FrontType.COLD
-
-    n_positive = np.sum(significant > 0)
-    n_negative = np.sum(significant < 0)
-    n_total = len(significant)
-    frac_positive = n_positive / n_total
-    frac_negative = n_negative / n_total
-
-    # Señal clara: usarla directamente
-    if frac_positive >= PURITY_THRESHOLD:
-        return FrontType.COLD
-    if frac_negative >= PURITY_THRESHOLD:
-        return FrontType.WARM
-
-    # Señal mixta: intentar resolver con geometría del centro
-    if low_centers:
-        center_type = _classify_by_center_azimuth(front, low_centers)
-        if center_type is not None:
-            return center_type
-
-    # Sin centro o sin señal clara: usar mayoría simple
-    if frac_positive > frac_negative:
-        return FrontType.COLD
-    elif frac_negative > frac_positive:
+    elif mean_speed > k3:
         return FrontType.WARM
     else:
-        return FrontType.OCCLUDED
-
-
-def _min_distance_to_nearest_low(
-    front: Front,
-    low_centers: List[PressureCenter],
-) -> float:
-    """Distancia mínima de cualquier punto del frente al centro L más cercano."""
-    min_dist = float("inf")
-    for center in low_centers:
-        distances = np.sqrt(
-            (front.lats - center.lat) ** 2 + (front.lons - center.lon) ** 2
-        )
-        d = distances.min()
-        if d < min_dist:
-            min_dist = d
-    return min_dist
-
-
-def _classify_by_center_azimuth(
-    front: Front,
-    low_centers: List[PressureCenter],
-) -> FrontType | None:
-    """Clasifica por posición relativa al centro L más cercano.
-
-    Modelo conceptual de ciclón extratropical (hemisferio norte):
-    - Sector S/SW del centro → frente frío (advección fría)
-    - Sector E/SE del centro → frente cálido (advección cálida)
-    - Muy cerca del centro → ocluido
-    """
-    # Buscar centro L más cercano
-    nearest_center = None
-    min_dist = float("inf")
-    for center in low_centers:
-        distances = np.sqrt(
-            (front.lats - center.lat) ** 2 + (front.lons - center.lon) ** 2
-        )
-        d = distances.min()
-        if d < min_dist:
-            min_dist = d
-            nearest_center = center
-
-    if nearest_center is None or min_dist > 10.0:
-        return None  # Demasiado lejos de cualquier centro
-
-    # Si está muy cerca del centro, es candidato a ocluido
-    if min_dist < PROXIMITY_OCCLUDED_DEG:
-        return FrontType.OCCLUDED
-
-    # Azimut medio del frente respecto al centro
-    mid_lat = np.mean(front.lats)
-    mid_lon = np.mean(front.lons)
-    dlat = mid_lat - nearest_center.lat
-    dlon = mid_lon - nearest_center.lon
-
-    # Azimut desde el centro al punto medio del frente (grados desde N, horario)
-    azimuth = np.degrees(np.arctan2(dlon, dlat)) % 360.0
-
-    # Modelo conceptual: cold front en sector SW (180-270°), warm front en sector E/SE (45-180°)
-    # Pero esto varía mucho, así que solo usamos como desempate suave
-    # Sector frío: 150-300° (S/SW/W/NW)
-    # Sector cálido: 0-150° o 300-360° (N/NE/E/SE)
-    if 150 <= azimuth <= 300:
-        return FrontType.COLD
-    else:
-        return FrontType.WARM
+        return FrontType.STATIONARY
 
 
 # ============================================================================
-# Segmentación de frentes mixtos
+# Segmentación de frentes mixtos por front_speed
 # ============================================================================
 
-def _split_mixed_front(
+def _split_mixed_front_by_speed(
     front: Front,
-    cross_products: np.ndarray,
+    front_speeds: np.ndarray,
     low_centers: List[PressureCenter],
 ) -> list[Front] | None:
-    """Segmenta un frente cerca de un centro L.
+    """Segmenta un frente cerca de un centro L usando front_speed.
 
-    Dos estrategias:
-    A) Por cross products: si hay señal mixta (>25% positivo Y >25% negativo),
-       buscar el punto de transición (cambio de signo).
-    B) Por azimut: si el frente cruza sectores distintos respecto al centro
-       (sector frío vs cálido), partir en el punto más cercano al centro.
-
-    Returns:
-        Lista de frentes segmentados, o None si no procede segmentar.
+    Si el frente tiene puntos con speed < -K3 (frio) Y puntos con speed > +K3
+    (calido), busca el punto de transicion para segmentar.
     """
-    if front.npoints < 6:
+    if front.npoints < 8:
         return None
 
     # Buscar centro L cercano
@@ -364,112 +252,65 @@ def _split_mixed_front(
     if nearest_center is None or min_dist > 10.0:
         return None
 
-    # Calcular azimut de cada punto respecto al centro
-    dlats = front.lats - nearest_center.lat
-    dlons = front.lons - nearest_center.lon
-    azimuths = np.degrees(np.arctan2(dlons, dlats)) % 360.0
+    # Suavizar front_speed para evitar cambios espurios
+    n_smooth = max(3, front.npoints // 8)
+    kernel = np.ones(n_smooth) / n_smooth
+    speed_smooth = np.convolve(front_speeds, kernel, mode="same")
 
-    # Sector frío: 150-300° (S/SW/W/NW), sector cálido: resto
-    is_cold_sector = (azimuths >= 150) & (azimuths <= 300)
-    has_cold_sector = np.any(is_cold_sector)
-    has_warm_sector = np.any(~is_cold_sector)
-
-    # --- Estrategia A: cross products mixtos ---
-    best_split = None
-    significant = cross_products[np.abs(cross_products) > SIGNIFICANCE_THRESHOLD]
-    if len(significant) > 0:
-        n_total = len(significant)
-        frac_positive = np.sum(significant > 0) / n_total
-        frac_negative = np.sum(significant < 0) / n_total
-
-        if frac_positive >= MIXED_THRESHOLD and frac_negative >= MIXED_THRESHOLD:
-            # Suavizar cross products
-            n_smooth = max(3, front.npoints // 8)
-            kernel = np.ones(n_smooth) / n_smooth
-            cp_smooth = np.convolve(cross_products, kernel, mode="same")
-
-            # Buscar cambios de signo
-            sign_changes = []
-            for k in range(1, len(cp_smooth)):
-                if cp_smooth[k - 1] * cp_smooth[k] < 0:
-                    sign_changes.append(k)
-
-            if sign_changes:
-                center_distances = np.sqrt(dlats ** 2 + dlons ** 2)
-                best_center_dist = float("inf")
-                for sc in sign_changes:
-                    d = center_distances[sc]
-                    if d < best_center_dist:
-                        best_center_dist = d
-                        best_split = sc
-
-    # --- Estrategia B: cambio de sector azimutal ---
-    if best_split is None and has_cold_sector and has_warm_sector:
-        # Buscar el punto donde cambia de sector, más cercano al centro
-        center_distances = np.sqrt(dlats ** 2 + dlons ** 2)
-        sector_changes = []
-        for k in range(1, front.npoints):
-            if is_cold_sector[k] != is_cold_sector[k - 1]:
-                sector_changes.append(k)
-
-        if sector_changes:
-            best_center_dist = float("inf")
-            for sc in sector_changes:
-                d = center_distances[sc]
-                if d < best_center_dist:
-                    best_center_dist = d
-                    best_split = sc
-
-    if best_split is None or best_split < 3 or best_split > front.npoints - 3:
+    # Comprobar si hay señal mixta
+    has_cold = np.any(speed_smooth < -K3_FRONT_SPEED)
+    has_warm = np.any(speed_smooth > K3_FRONT_SPEED)
+    if not (has_cold and has_warm):
         return None
 
-    # --- Crear segmentos ---
-    segments = []
-    min_seg_points = 3
+    # Buscar cambio de signo en speed_smooth
+    sign_changes = []
+    for k in range(1, len(speed_smooth)):
+        if speed_smooth[k - 1] * speed_smooth[k] < 0:
+            sign_changes.append(k)
 
+    if not sign_changes:
+        return None
+
+    # Elegir el cambio de signo más cercano al centro
+    dlats = front.lats - nearest_center.lat
+    dlons = front.lons - nearest_center.lon
+    center_distances = np.sqrt(dlats**2 + dlons**2)
+
+    best_split = None
+    best_center_dist = float("inf")
+    for sc in sign_changes:
+        d = center_distances[sc]
+        if d < best_center_dist:
+            best_center_dist = d
+            best_split = sc
+
+    if best_split is None or best_split < 4 or best_split > front.npoints - 4:
+        return None
+
+    # Crear segmentos
+    segments = []
     for seg_start, seg_end, seg_idx in [
         (0, best_split + 1, 0),
         (best_split, front.npoints, 1),
     ]:
         seg_lats = front.lats[seg_start:seg_end]
         seg_lons = front.lons[seg_start:seg_end]
-
-        if len(seg_lats) < min_seg_points:
+        if len(seg_lats) < 4:
             continue
 
-        seg_cp = cross_products[seg_start:seg_end]
-        seg_az = azimuths[seg_start:seg_end]
+        seg_speeds = front_speeds[seg_start:seg_end]
 
-        # Determinar tipo: usar azimut medio del segmento respecto al centro
-        seg_center_dists = np.sqrt(
-            (seg_lats - nearest_center.lat) ** 2
-            + (seg_lons - nearest_center.lon) ** 2
+        # Distancia minima del segmento al centro
+        seg_dists = np.sqrt(
+            (seg_lats - nearest_center.lat)**2
+            + (seg_lons - nearest_center.lon)**2
         )
 
-        if seg_center_dists.min() < PROXIMITY_OCCLUDED_DEG:
+        if seg_dists.min() < PROXIMITY_OCCLUDED_DEG:
             seg_type = FrontType.OCCLUDED
         else:
-            # Usar combinación de cross product + azimut
-            sig = seg_cp[np.abs(seg_cp) > SIGNIFICANCE_THRESHOLD]
-            if len(sig) > 0:
-                frac_pos = np.sum(sig > 0) / len(sig)
-            else:
-                frac_pos = 0.5
-
-            # Azimut medio del segmento
-            mean_az = np.mean(seg_az) % 360.0
-            in_cold_sector = 150 <= mean_az <= 300
-
-            # Cross product y azimut concuerdan → alta confianza
-            # Si no concuerdan → usar el que tenga señal más fuerte
-            if frac_pos >= 0.6 or (frac_pos >= 0.4 and in_cold_sector):
-                seg_type = FrontType.COLD
-            elif frac_pos <= 0.4 or (frac_pos <= 0.6 and not in_cold_sector):
-                seg_type = FrontType.WARM
-            elif in_cold_sector:
-                seg_type = FrontType.COLD
-            else:
-                seg_type = FrontType.WARM
+            seg_type = _classify_from_speed(seg_speeds)
 
         seg_front = Front(
             front_type=seg_type,
@@ -481,12 +322,53 @@ def _split_mixed_front(
         )
         segments.append(seg_front)
 
-        logger.debug(
-            "Segmento %s_%d: %d pts, tipo=%s, az_medio=%.0f°",
-            front.id[:8], seg_idx, len(seg_lats), seg_type.value, np.mean(seg_az),
-        )
-
     return segments if len(segments) >= 2 else None
+
+
+# ============================================================================
+# Fallback: clasificación por azimut (solo cuando no hay campos Hewson)
+# ============================================================================
+
+def _classify_by_center_azimuth(
+    front: Front,
+    low_centers: List[PressureCenter],
+) -> FrontType | None:
+    """Clasifica por posición relativa al centro L más cercano.
+
+    Modelo conceptual de ciclón extratropical (hemisferio norte):
+    - Sector S/SW del centro → frente frío
+    - Sector E/SE del centro → frente cálido
+    - Muy cerca del centro → ocluido
+    """
+    nearest_center = None
+    min_dist = float("inf")
+    for center in low_centers:
+        distances = np.sqrt(
+            (front.lats - center.lat) ** 2 + (front.lons - center.lon) ** 2
+        )
+        d = distances.min()
+        if d < min_dist:
+            min_dist = d
+            nearest_center = center
+
+    if nearest_center is None or min_dist > 8.0:
+        return None
+
+    if min_dist < PROXIMITY_OCCLUDED_DEG:
+        return FrontType.OCCLUDED
+
+    mid_lat = np.mean(front.lats)
+    mid_lon = np.mean(front.lons)
+    dlat = mid_lat - nearest_center.lat
+    dlon = mid_lon - nearest_center.lon
+    azimuth = np.degrees(np.arctan2(dlon, dlat)) % 360.0
+
+    if 180 <= azimuth <= 280:
+        return FrontType.COLD
+    elif 30 <= azimuth <= 150:
+        return FrontType.WARM
+    else:
+        return None
 
 
 # ============================================================================
@@ -504,7 +386,6 @@ def _apply_robust_occlusion_detection(
     """Aplica detección robusta de oclusiones a frentes candidatos."""
     multilevel_data = _load_multilevel_data(ds, lats, lons)
 
-    # Identificar candidatos geométricos si tenemos centros
     geometric_candidates = set()
     if centers is not None:
         geometric_candidates = _detect_geometric_occlusions(
@@ -588,7 +469,6 @@ def _detect_geometric_occlusions(
         if len(nearby_fronts) < 2:
             continue
 
-        # Buscar pares frío+cálido convergentes
         for i, (front1, dist1) in enumerate(nearby_fronts):
             for front2, dist2 in nearby_fronts[i + 1 :]:
                 types = {front1.front_type, front2.front_type}
