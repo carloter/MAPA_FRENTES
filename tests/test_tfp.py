@@ -3,8 +3,8 @@
 import numpy as np
 import pytest
 
-from mapa_frentes.utils.geo import haversine, grid_spacing, spherical_gradient
-from mapa_frentes.utils.smoothing import smooth_field
+from mapa_frentes.utils.geo import haversine, grid_spacing, spherical_gradient, spherical_laplacian
+from mapa_frentes.utils.smoothing import smooth_field, smooth_field_npass
 
 
 class TestHaversine:
@@ -91,7 +91,7 @@ def _compute_tfp_field(theta_w, lats, lons, sigma):
     ux = gx / grad_mag_safe
     uy = gy / grad_mag_safe
     gmag_x, gmag_y = spherical_gradient(grad_mag, lats, lons)
-    tfp = -(gmag_x * ux + gmag_y * uy)
+    tfp = (gmag_x * ux + gmag_y * uy)
     return tfp, grad_mag
 
 
@@ -113,3 +113,83 @@ class TestTFPField:
         theta_w, lats, lons = synthetic_theta_w
         _, grad_mag = _compute_tfp_field(theta_w, lats, lons, sigma=4.0)
         assert np.all(grad_mag >= 0)
+
+
+class TestSmoothFieldNpass:
+    """Tests para el suavizado n-pass 5-point (Sansom & Catto 2024)."""
+
+    def test_preserves_mean(self):
+        np.random.seed(42)
+        data = np.random.randn(50, 80) + 300.0
+        smoothed = smooth_field_npass(data, n_passes=8)
+        assert np.mean(data) == pytest.approx(np.mean(smoothed), abs=0.05)
+
+    def test_reduces_variance(self):
+        np.random.seed(42)
+        data = np.random.randn(50, 80)
+        smoothed = smooth_field_npass(data, n_passes=8)
+        assert np.var(smoothed) < np.var(data)
+
+    def test_more_passes_smoother(self):
+        np.random.seed(42)
+        data = np.random.randn(50, 80)
+        s8 = smooth_field_npass(data, n_passes=8)
+        s96 = smooth_field_npass(data, n_passes=96)
+        assert np.var(s96) < np.var(s8)
+
+    def test_no_nan_output(self):
+        data = np.ones((20, 20))
+        data[5, 5] = np.nan
+        smoothed = smooth_field_npass(data, n_passes=4)
+        assert not np.any(np.isnan(smoothed))
+
+    def test_uniform_field_unchanged(self):
+        data = np.full((30, 40), 280.0)
+        smoothed = smooth_field_npass(data, n_passes=10)
+        assert np.allclose(smoothed, 280.0, atol=1e-10)
+
+
+class TestSphericalLaplacian:
+    """Tests para el laplaciano esferico (Sansom & Catto 2024, Sect. 3.4)."""
+
+    def test_uniform_field_zero_laplacian(self):
+        lats = np.linspace(30, 60, 50)
+        lons = np.linspace(-20, 20, 80)
+        field = np.ones((50, 80)) * 300.0
+        lapl = spherical_laplacian(field, lats, lons)
+        assert np.allclose(lapl, 0.0, atol=1e-15)
+
+    def test_shape_preserved(self):
+        lats = np.linspace(25, 65, 40)
+        lons = np.linspace(-60, 30, 90)
+        field = np.random.randn(40, 90)
+        lapl = spherical_laplacian(field, lats, lons)
+        assert lapl.shape == field.shape
+
+    def test_quadratic_field(self):
+        """Un campo cuadratico f = lat^2 tiene d^2f/dy^2 = constante."""
+        lats = np.linspace(30, 60, 121)
+        lons = np.linspace(-20, 20, 161)
+        _, lat2d = np.meshgrid(lons, lats)
+        # f = (lat_rad)^2; d^2f/dphi^2 = 2; d^2f/dy^2 = 2/a^2
+        field = np.radians(lat2d) ** 2
+        lapl = spherical_laplacian(field, lats, lons)
+        # En el interior, el laplaciano deberia ser aproximadamente 2/a^2
+        a = 6.371e6
+        expected = 2.0 / a**2
+        interior = lapl[5:-5, 5:-5]
+        assert np.allclose(interior, expected, rtol=0.05)
+
+    def test_cos_lat_correction(self):
+        """Verifica que dx varia con latitud (diferencia vs laplace uniforme)."""
+        lats = np.linspace(0, 80, 81)
+        lons = np.linspace(0, 40, 41)
+        lon2d, lat2d = np.meshgrid(lons, lats)
+        # Campo con variacion zonal: f = cos(lon_rad)
+        field = np.cos(np.radians(lon2d))
+        lapl = spherical_laplacian(field, lats, lons)
+        # A latitudes altas, la contribucion zonal d2f/dx2 deberia ser mayor
+        # porque dx es menor (cos(lat) factor)
+        lapl_eq = np.abs(lapl[5, 20])   # ~5 grados lat
+        lapl_hi = np.abs(lapl[70, 20])  # ~70 grados lat
+        assert lapl_hi > lapl_eq  # mas curvatura aparente a alta latitud

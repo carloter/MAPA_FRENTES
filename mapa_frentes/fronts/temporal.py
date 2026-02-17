@@ -139,11 +139,11 @@ def _find_cached_gribs(
         date_tag = date.strftime("%Y%m%d%H")
         step_tag = f"_T{step:03d}" if step > 0 else ""
         sfc = cache_dir / f"ecmwf_sfc_{date_tag}{step_tag}.grib2"
-        pl = cache_dir / f"ecmwf_pl850_{date_tag}{step_tag}.grib2"
+        pl = cache_dir / f"ecmwf_pl_multi_{date_tag}{step_tag}.grib2"
     else:
         step_tag = f"_T{step:03d}" if step > 0 else ""
         sfc = cache_dir / f"ecmwf_sfc_latest{step_tag}.grib2"
-        pl = cache_dir / f"ecmwf_pl850_latest{step_tag}.grib2"
+        pl = cache_dir / f"ecmwf_pl_multi_latest{step_tag}.grib2"
 
     if sfc.exists() and pl.exists():
         return {"surface": sfc, "pressure": pl}

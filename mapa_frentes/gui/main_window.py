@@ -647,12 +647,12 @@ class MainWindow(QMainWindow):
             find_nearest_center_for_front, smooth_extend_to_center,
         )
 
-        center, which_end, dist = find_nearest_center_for_front(front, lows)
-        max_dist = self.cfg.center_fronts.max_association_distance_deg
+        center, which_end, dist_km = find_nearest_center_for_front(front, lows)
+        max_dist_km = self.cfg.center_fronts.max_association_distance_deg * 111.0  # deg to km approx
 
-        if center is None or dist > max_dist:
+        if center is None or dist_km > max_dist_km:
             self.statusbar.showMessage(
-                f"No hay borrasca dentro del umbral ({max_dist:.0f} deg)", 3000,
+                f"No hay borrasca dentro del umbral ({max_dist_km:.0f} km)", 3000,
             )
             return
 

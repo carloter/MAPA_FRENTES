@@ -31,43 +31,73 @@ pressure_centers:
   low_label: "B"             # etiqueta para borrasca (estilo AEMET)
 
 tfp:
-  smooth_sigma: 8.0                # FUERTE: elimina ruido subsinotico (Sansom&Catto usan ~96 pases a 0.25deg)
-  gradient_threshold: 2.5e-6       # ALTO: solo zonas baroclinas fuertes (frentes reales)
+  # ===== Suavizado (Sansom & Catto 2024) =====
+  smoothing_method: "npass"        # "npass" (paper) o "gaussian" (legacy)
+  smoothing_passes: 50             # paper: n=96. Ajustado: 40=muchos frentes, 60=pocos, 50=equilibrio
+  smooth_sigma: 8.0                # solo se usa si smoothing_method="gaussian"
+  #gradmag_smooth_sigma: 4.8       # ~ smooth_sigma*0.6 (para estabilizar TFL)
 
-  # detección (legacy DBSCAN - solo si use_contour_method: false)
-  dbscan_eps_deg: 3.0
+  # ===== Método principal =====
+  use_contour_method: true         # H98 contour-then-mask (TFL=0)
+  contour_margin_px: 3
+
+  # ===== H98 thresholds: K1 (TFP) y K2 (ABZ) =====
+  # K1 <= 0, K2 >= 0 (Sansom & Catto 2024, Sect. 3.2)
+  # Valores climatologicos del paper (cap/floor si cuantiles activados)
+  k1_tfp: -1.6e-11                # paper: percentil 25 de TFP (-1.6e-11 K m-2)
+  k2_abz: 1.0e-5                  # paper: 7.5e-6. Subido para filtrar frentes debiles cerca de B
+  abz_use_raw_gradient: true       # paper Eq.3: ABZ usa |grad theta_w| sin re-suavizar
+
+  # Cuantiles (usar false para valores fijos del paper; true para adaptativos)
+  use_quantile_thresholds: false
+  quantile_lat_min: 23.4
+  quantile_lat_max: 66.6
+
+  # paper sugiere K1=q0.25 de TFP, K2=q0.50 de |grad|ABZ (extra-trópicos) 
+  k1_tfp_quantile: 0.25
+  k2_abz_quantile: 0.50
+
+  # Estabilizadores para no pasarte (recomendado en operativo)
+  k1_use_cap: true               # K1 = min(k1_tfp, qK1)  (evita K1 demasiado "suave")
+  k2_use_floor: true             # K2 = max(k2_abz, qK2)  (evita K2 demasiado bajo)
+
+  # ===== Filtros físicos opcionales (NO en Sansom & Catto 2024) =====
+  use_f_diagnostic: false         # Parfitt et al. — desactivado (no en paper)
+  # Si activas cuantiles para F, el threshold se toma de la distribución instantánea (más robusto)
+  use_f_quantile_threshold: true
+  f_quantile: 0.60
+  f_diagnostic_threshold: 0.60   # fallback si no hay cuantiles/datos
+
+  use_mslp_filter: false          # filtro ciclonico MSLP — desactivado (no en paper)
+  mslp_laplacian_sigma: 2.5
+  # En vez de >0 (muy agresivo), usa corte por percentil de la laplaciana (más permisivo)
+  mslp_use_percentile_cut: true
+  mslp_laplacian_percentile: 0.40
+  mslp_laplacian_cut: 0.0        # fallback si no hay percentil/datos
+
+  # ===== Geometría / postproceso =====
+  min_front_points: 6
+  min_front_length_km: 250.0       # paper: 250 km gran-circulo
+  min_front_length_deg: 3.0        # solo para pipeline legacy DBSCAN
+  max_fronts: 0                  # 0 = sin límite (para test). En operativo: 30
+  spline_smoothing: 0.6
+  max_points_per_front: 120
+
+  # ===== Legacy (si algún día pruebas mask-then-join) =====
+  gradient_threshold: 2.0e-6     # usado SOLO por legacy find_zero_crossings
+  dbscan_eps_deg: 2.2
   dbscan_min_samples: 3
-  min_front_points: 6              # mínimo 6 vértices por segmento de contorno
-
-  # geometría
-  simplify_tolerance_deg: 0.25
+  simplify_tolerance_deg: 0.12
   max_hop_deg: 3.0
-  angular_weight: 0.60
-  spline_smoothing: 0.5            # suavizado spline más fuerte para frentes más lisos
-  merge_distance_deg: 2.0
+  angular_weight: 0.55
+  merge_distance_deg: 3.0
+  use_frontogenesis_filter: false
+  frontogenesis_percentile: 25
 
-  # filtros físicos
-  use_mslp_filter: true
-  mslp_laplacian_sigma: 6.0        # suavizado MSLP sinóptico
-
-  use_frontogenesis_filter: true
-  frontogenesis_percentile: 8
-
-  min_front_length_deg: 5.0        # SOLO frentes largos (sinópticos, no mesoescala)
-  max_fronts: 30                   # AEMET dibuja ~15-20 en todo el dominio
-
-  # Método de extracción: contour-then-mask (Sansom & Catto 2024)
-  use_contour_method: true
-
-  # Diagnóstico F (Parfitt et al. 2017): F = (|grad_T|/escala) * (|vor|/|f|)
-  # Filtra gradientes termicos sin actividad dinámica (costas, orografia)
-  use_f_diagnostic: true
-  f_diagnostic_threshold: 0.15      # moderado: requiere gradiente Y vorticidad significativos
-
-  # Boost por vorticidad: reduce umbral de gradiente donde |vo850| es alto
+  # ===== Vorticity boost (legacy) =====
   use_vorticity_boost: true
-  vorticity_boost_threshold: 5.0e-5
-  vorticity_boost_factor: 0.5       # threshold * 0.5 = 1.25e-6 en zonas de alta vorticidad
+  vorticity_boost_threshold: 4.0e-5
+  vorticity_boost_factor: 0.65
 
 plotting:
   figsize: [18, 11]
@@ -97,6 +127,9 @@ center_fronts:
   max_association_distance_deg: 8
   require_low_center: true       # solo frentes cerca de centros L (borrascas)
   max_distance_to_low_deg: 12.0  # radio maximo alrededor de cada L
+  association_strategy: "min_along_front"  # "ends" (legacy) o "min_along_front" (recomendado)
+  extend_to_center: true                   # para que no queden “cortados” lejos del centro
+  extend_max_distance_km: 800              # límite para extender (evita unir cosas lejanas raras)
 
 temporal:
   enabled: true
@@ -147,15 +180,15 @@ precipitation:
   threshold_mm: 0.5      # no dibujar por debajo de este valor (transparente)
   alpha: 0.5             # transparencia del contourf
   cmap: "YlGnBu"         # colormap
-  num_levels: 15          # niveles de contorno
+  num_levels: 15         # niveles de contorno
 
 wind_vectors:
   thin_factor: 5         # cada N puntos de la rejilla (0.25deg * 8 = 2deg)
-  scale: 6000             # escala del quiver (mayor = flechas mas cortas)
-  width: 0.0005           # grosor de las flechas
+  scale: 6000            # escala del quiver (mayor = flechas mas cortas)
+  width: 0.0005          # grosor de las flechas
   color: "#555555"       # color de las flechas
   alpha: 1.0             # transparencia (1.0 = opaco)
-  web_scale_factor: 0.1 # multiplicador de scale para web (mayor = flechas mas cortas en web)
+  web_scale_factor: 0.1  # multiplicador de scale para web (mayor = flechas mas cortas en web)
   web_width_factor: 0.6  # multiplicador de width para web (menor = mas finas en web)
 
 occlusion:

@@ -640,3 +640,5 @@ def _classify_occlusion_type(
         return FrontType.WARM_OCCLUDED
     else:
         return FrontType.COLD_OCCLUDED
+
+

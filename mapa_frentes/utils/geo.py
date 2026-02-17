@@ -55,6 +55,62 @@ def grid_spacing(lats: np.ndarray, lons: np.ndarray):
     return dx, dy
 
 
+def spherical_laplacian(field: np.ndarray, lats: np.ndarray, lons: np.ndarray) -> np.ndarray:
+    """Laplaciano de un campo 2D en una rejilla lat-lon esferica.
+
+    Calcula nabla^2 f = d^2f/dx^2 + d^2f/dy^2 usando diferencias finitas
+    centrales de 2do orden en el interior, y forward/backward en los bordes.
+    El espaciado dx incluye la correccion cos(lat) via grid_spacing().
+
+    Ref: Sansom & Catto (2024), Sect. 3.4 — diferencias finitas explicitas
+    de 2do orden para el TFL.
+
+    Args:
+        field: Array 2D (nlat, nlon).
+        lats: Array 1D de latitudes en grados.
+        lons: Array 1D de longitudes en grados.
+
+    Returns:
+        lapl: Array 2D, misma forma que field, en [field_units / m^2].
+    """
+    ny, nx = field.shape
+    dx, dy = grid_spacing(lats, lons)
+
+    # --- d^2f/dx^2 (zonal) ---
+    d2f_dx2 = np.zeros_like(field)
+    # Interior: central
+    d2f_dx2[:, 1:-1] = (
+        field[:, 2:] - 2.0 * field[:, 1:-1] + field[:, :-2]
+    ) / dx[:, 1:-1] ** 2
+    # Borde izquierdo (i=0): forward
+    if nx >= 3:
+        d2f_dx2[:, 0] = (
+            field[:, 0] - 2.0 * field[:, 1] + field[:, 2]
+        ) / dx[:, 0] ** 2
+        # Borde derecho (i=-1): backward
+        d2f_dx2[:, -1] = (
+            field[:, -1] - 2.0 * field[:, -2] + field[:, -3]
+        ) / dx[:, -1] ** 2
+
+    # --- d^2f/dy^2 (meridional) ---
+    d2f_dy2 = np.zeros_like(field)
+    # Interior: central
+    d2f_dy2[1:-1, :] = (
+        field[2:, :] - 2.0 * field[1:-1, :] + field[:-2, :]
+    ) / dy[1:-1, :] ** 2
+    # Borde superior (j=0): forward
+    if ny >= 3:
+        d2f_dy2[0, :] = (
+            field[0, :] - 2.0 * field[1, :] + field[2, :]
+        ) / dy[0, :] ** 2
+        # Borde inferior (j=-1): backward
+        d2f_dy2[-1, :] = (
+            field[-1, :] - 2.0 * field[-2, :] + field[-3, :]
+        ) / dy[-1, :] ** 2
+
+    return d2f_dx2 + d2f_dy2
+
+
 def spherical_gradient(field: np.ndarray, lats: np.ndarray, lons: np.ndarray):
     """Calcula el gradiente de un campo en coordenadas esfericas.
 

@@ -2,7 +2,7 @@
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import List
+from typing import List, Optional
 
 import yaml
 
@@ -61,7 +61,11 @@ class PressureCentersConfig:
 
 @dataclass
 class TFPConfig:
-    smooth_sigma: float = 5.0
+    # Smoothing method: "gaussian" (legacy) or "npass" (Sansom & Catto 2024)
+    smoothing_method: str = "npass"
+    smoothing_passes: int = 96          # n-pass for 0.25deg IFS/ERA5. Use 8 for 0.75deg ERA-Interim
+    smooth_sigma: float = 5.0           # Gaussian fallback (only used if smoothing_method="gaussian")
+    gradmag_smooth_sigma: Optional[float] = None  # None = auto (smooth_sigma * 0.6)
     gradient_threshold: float = 4.0e-6
     min_front_points: int = 8
     dbscan_eps_deg: float = 1.8
@@ -69,12 +73,39 @@ class TFPConfig:
     simplify_tolerance_deg: float = 0.10
     use_mslp_filter: bool = True
     mslp_laplacian_sigma: float = 8.0
-    # Connector parameters (previously hardcoded)
-    min_front_length_deg: float = 5.0
+    # Contour method (Sansom & Catto 2024): contour-then-mask vs legacy DBSCAN
+    use_contour_method: bool = True
+    contour_margin_px: int = 3
+    # H98 thresholds K1 (TFP) and K2 (ABZ) — paper climatological values
+    k1_tfp: float = -1.6e-11           # paper: 25th percentile TFP
+    k2_abz: float = 7.5e-6             # paper: 50th percentile |grad theta_w|
+    # ABZ: use raw gradient (paper Eq. 3) vs re-smoothed (legacy)
+    abz_use_raw_gradient: bool = True
+    # Quantile-based thresholds
+    use_quantile_thresholds: bool = True
+    quantile_lat_min: float = 23.4
+    quantile_lat_max: float = 66.6
+    k1_tfp_quantile: float = 0.25
+    k2_abz_quantile: float = 0.50
+    k1_use_cap: bool = True
+    k2_use_floor: bool = True
+    # F diagnostic (Parfitt et al. 2017)
+    use_f_diagnostic: bool = True
+    f_diagnostic_threshold: float = 1.0
+    use_f_quantile_threshold: bool = True
+    f_quantile: float = 0.60
+    # MSLP filter
+    mslp_use_percentile_cut: bool = True
+    mslp_laplacian_percentile: float = 0.40
+    mslp_laplacian_cut: float = 0.0
+    # Minimum front length (paper: 250 km great-circle)
+    min_front_length_km: float = 250.0   # contour method (haversine)
+    min_front_length_deg: float = 5.0    # legacy DBSCAN only
     max_hop_deg: float = 3.0
     angular_weight: float = 0.55
     spline_smoothing: float = 0.6
     merge_distance_deg: float = 3.0
+    max_points_per_front: int = 120
     # Frontogenesis filter
     use_frontogenesis_filter: bool = True
     frontogenesis_percentile: int = 25
@@ -82,13 +113,8 @@ class TFPConfig:
     max_fronts: int = 15
     # Vorticity boost: reduce gradient threshold where vorticity is high
     use_vorticity_boost: bool = False
-    vorticity_boost_threshold: float = 5.0e-5  # |vor| > this activates boost
-    vorticity_boost_factor: float = 0.4         # gradient_threshold * this in high-vor zones
-    # F diagnostic (Parfitt et al. 2017): thermal gradient × vorticity / coriolis
-    use_f_diagnostic: bool = True
-    f_diagnostic_threshold: float = 1.0         # F > this to keep front point
-    # Contour method (Sansom & Catto 2024): contour-then-mask vs legacy DBSCAN
-    use_contour_method: bool = True
+    vorticity_boost_threshold: float = 5.0e-5
+    vorticity_boost_factor: float = 0.4
 
 
 @dataclass
@@ -140,6 +166,9 @@ class CenterFrontsConfig:
     max_association_distance_deg: float = 10.0
     require_low_center: bool = True        # Solo mantener frentes cerca de centros L
     max_distance_to_low_deg: float = 12.0  # Radio maximo de busqueda alrededor de L
+    association_strategy: str = "min_along_front"  # "ends" o "min_along_front"
+    extend_to_center: bool = False
+    extend_max_distance_km: float = 800.0
 
 
 @dataclass

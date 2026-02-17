@@ -91,6 +91,22 @@
       overflow: hidden; text-overflow: ellipsis;
     }
 
+    /* Split vertex marker: scissors icon */
+    .split-marker {
+      width: 14px; height: 14px; border-radius: 50%;
+      background: #ff4444; border: 2px solid #fff;
+      cursor: crosshair; box-shadow: 0 0 4px rgba(255,0,0,0.6);
+    }
+    .split-marker:hover { background: #ff0; border-color: #000; transform: scale(1.3); }
+
+    /* Edit dropdown menu items with active indicator */
+    .export-dropdown-menu button.menu-active {
+      background: #1a5276; color: #fff; font-weight: 600;
+    }
+    .export-dropdown-menu button.menu-active::before {
+      content: "\2713 "; /* checkmark */
+    }
+
     /* WMO symbol markers: no shadow, no default icon styles, allow rotation overflow */
     .wmo-symbol { background: none !important; border: none !important; overflow: visible !important; }
 
@@ -185,9 +201,29 @@
   <label><input type="checkbox" id="wind-850-check" /> V850</label>
   <label><input type="checkbox" id="wind-700-check" /> V700</label>
   <div class="tb-sep"></div>
-  <button id="btn-flip" disabled title="Invertir simbolos de todos los frentes">Invertir</button>
-  <button id="btn-edit-mode" disabled title="Activar modo editar: click en un frente para mover vertices">Editar</button>
-  <button id="btn-delete-mode" disabled title="Activar modo borrar: click en un frente para eliminarlo">Borrar</button>
+  <div class="export-dropdown">
+    <button class="export-dropdown-btn" id="btn-edit-toggle" disabled>Edicion &#9662;</button>
+    <div class="export-dropdown-menu" id="edit-menu">
+      <button id="btn-edit-mode">Editar vertices</button>
+      <button id="btn-split-mode">Dividir en vertice</button>
+      <button id="btn-delete-mode">Borrar (click)</button>
+      <hr/>
+      <button id="btn-select-mode">Seleccionar</button>
+      <button id="btn-select-rect">Seleccionar por area</button>
+      <hr/>
+      <button id="btn-assign-type">Asignar tipo a seleccion</button>
+      <button id="btn-delete-selected" class="danger">Borrar seleccion</button>
+      <hr/>
+      <button id="btn-flip">Invertir todos los simbolos</button>
+      <hr/>
+      <button id="btn-center-delete">Borrar centro (A/B)</button>
+      <button id="btn-center-add">Anadir centro (A/B)</button>
+      <hr/>
+      <button id="btn-undo">Deshacer (Ctrl+Z)</button>
+    </div>
+  </div>
+  <span id="sel-count" style="color:#FFD700;font-size:11px;"></span>
+  <span id="mode-indicator" style="font-size:11px;color:#e74c3c;"></span>
   <div class="spacer"></div>
   <span id="status">Listo</span>
 </div>
@@ -441,10 +477,38 @@ var coastlineData = null;
 var masterFronts = { type: "FeatureCollection", features: [] };
 var deleteMode = false;
 var editMode = false;
+var splitMode = false;
+var selectMode = false;
+var selectedFronts = new Set();   // Set of feature indices selected
+var selectRectDrawer = null;      // L.Draw.Rectangle handler
 var selectedFeature = null;
 var vertexMarkers = [];       // L.marker arrastrables (solo panel 0)
 var editHighlights = [];      // L.polyline resaltadas (todos los paneles)
 var colorLegends = [];  // DOM elements per panel
+var undoStack = [];     // snapshots of masterFronts for undo
+var UNDO_MAX = 30;      // max undo levels
+
+// ==========================================================================
+// Undo
+// ==========================================================================
+function pushUndo() {
+  // Deep-copy current masterFronts
+  undoStack.push(JSON.stringify(masterFronts));
+  if (undoStack.length > UNDO_MAX) undoStack.shift();
+}
+
+function undoAction() {
+  if (undoStack.length === 0) {
+    setStatus("Nada que deshacer");
+    return;
+  }
+  masterFronts = JSON.parse(undoStack.pop());
+  selectedFronts.clear();
+  updateSelectionUI();
+  clearEditSelection();
+  renderFrontsOnAllPanels();
+  setStatus("Deshacer (" + undoStack.length + " niveles restantes)");
+}
 
 // ==========================================================================
 // UI helpers
@@ -457,8 +521,7 @@ function setButtonsEnabled(loaded) {
   document.getElementById("btn-save").disabled = !loaded;
   document.getElementById("btn-export-toggle").disabled = !loaded;
   document.getElementById("btn-flip").disabled = !loaded;
-  document.getElementById("btn-edit-mode").disabled = !loaded;
-  document.getElementById("btn-delete-mode").disabled = !loaded;
+  document.getElementById("btn-edit-toggle").disabled = !loaded;
 }
 
 function getSelectedFrontType() {
@@ -507,12 +570,19 @@ function renderFrontsOnAllPanels() {
 
     var group = L.layerGroup().addTo(map);
 
-    (masterFronts.features || []).forEach(function(feature) {
+    (masterFronts.features || []).forEach(function(feature, featureIdx) {
       var coords = feature.geometry && feature.geometry.coordinates;
       if (!coords || coords.length < 2) return;
 
       var latlngs = coords.map(function(c) { return L.latLng(c[1], c[0]); });
       var ft = (feature.properties && feature.properties.front_type) || "cold";
+
+      // Selection highlight (gold outline behind the front)
+      if (selectedFronts.has(featureIdx)) {
+        L.polyline(latlngs, {
+          color: "#FFD700", weight: 7, opacity: 0.6, interactive: false, pane: "fronts"
+        }).addTo(group);
+      }
 
       // Draw the line
       var line = L.polyline(latlngs, frontLineStyle(ft)).addTo(group);
@@ -520,8 +590,21 @@ function renderFrontsOnAllPanels() {
       // Click behavior depends on mode
       line.on("click", function(e) {
         L.DomEvent.stopPropagation(e);
-        if (deleteMode) {
+        if (splitMode) {
+          // Select front for splitting
+          selectFrontForSplit(feature);
+        } else if (selectMode) {
+          // Toggle selection
+          if (selectedFronts.has(featureIdx)) {
+            selectedFronts.delete(featureIdx);
+          } else {
+            selectedFronts.add(featureIdx);
+          }
+          updateSelectionUI();
+          renderFrontsOnAllPanels();
+        } else if (deleteMode) {
           // Delete this front
+          pushUndo();
           var idx = masterFronts.features.indexOf(feature);
           if (idx >= 0) masterFronts.features.splice(idx, 1);
           renderFrontsOnAllPanels();
@@ -531,6 +614,7 @@ function renderFrontsOnAllPanels() {
           selectFrontForEdit(feature);
         } else {
           // Flip symbol direction
+          pushUndo();
           feature.properties.flip = !feature.properties.flip;
           feature.properties.flip_symbols = feature.properties.flip;
           renderFrontsOnAllPanels();
@@ -673,11 +757,16 @@ function _createPanel(idx, mosaic, fieldKeys, fieldLabels) {
     }, 300);
   });
 
-  // Click on map background: deselect in edit mode
+  // Click on map background: deselect in any mode
   map.on("click", function() {
-    if (editMode && selectedFeature) {
+    if (selectMode && selectedFronts.size > 0) {
+      selectedFronts.clear();
+      updateSelectionUI();
+      renderFrontsOnAllPanels();
+      setStatus("Seleccion limpiada. Click en frentes para seleccionar.");
+    } else if ((editMode || splitMode) && selectedFeature) {
       clearEditSelection();
-      setStatus("Frente deseleccionado. Click en otro frente para editarlo.");
+      setStatus("Frente deseleccionado.");
     }
   });
 
@@ -746,6 +835,14 @@ function initDrawOnPanel(panelIdx) {
 
   maps[panelIdx].on(L.Draw.Event.CREATED, function(e) {
     var layer = e.layer;
+
+    // Rectangle selection mode: select fronts inside rectangle
+    if (selectMode && e.layerType === "rectangle") {
+      handleRectangleCreated(e);
+      return;
+    }
+
+    // Normal draw: create a new front
     var selectedType = getSelectedFrontType();
     var geojson = layer.toGeoJSON();
 
@@ -758,6 +855,7 @@ function initDrawOnPanel(panelIdx) {
       geometry: geojson.geometry,
     };
 
+    pushUndo();
     masterFronts.features.push(feature);
     renderFrontsOnAllPanels();
     setStatus("Frente " + selectedType + " dibujado");
@@ -1194,20 +1292,26 @@ async function loadIsobars() {
 }
 
 // ==========================================================================
-// Pressure centers
+// Pressure centers (editable client-side)
 // ==========================================================================
+var masterCenters = [];  // array of {id, type, lat, lon, value, primary, name, label}
+var centerDeleteMode = false;
+
 async function loadCenters() {
   var resp = await fetch("/api/centers");
-  var centers = await resp.json();
+  masterCenters = await resp.json();
+  renderCentersOnAllPanels();
+}
 
+function renderCentersOnAllPanels() {
   maps.forEach(function(map, i) {
     if (centerLayers[i]) map.removeLayer(centerLayers[i]);
 
     var layer = L.layerGroup();
-    centers.forEach(function(c) {
-      var label = c.primary ? c.label.toUpperCase() : c.label.toLowerCase();
+    masterCenters.forEach(function(c, cIdx) {
+      var label = c.label || (c.type === "H" ? "A" : "B");
       var color = c.type === "H" ? "#0044CC" : "#CC0000";
-      var size = c.primary ? 16 : 12;
+      var size = label === label.toUpperCase() ? 16 : 12;
       var nameHtml = c.name ? '<br><span style="font-size:9px;font-style:italic">' + c.name + '</span>' : "";
 
       var icon = L.divIcon({
@@ -1223,13 +1327,80 @@ async function loadCenters() {
       });
 
       var marker = L.marker([c.lat, c.lon], { icon: icon, interactive: true });
-      if (c.type === "L") {
-        marker.on("click", function() { generateFromCenter(c.id, c.value); });
-      }
+      marker.on("click", function(e) {
+        L.DomEvent.stopPropagation(e);
+        if (centerDeleteMode) {
+          // Delete this center
+          masterCenters.splice(cIdx, 1);
+          renderCentersOnAllPanels();
+          setStatus("Centro eliminado");
+        } else {
+          // Toggle case: A->a->A / B->b->B
+          toggleCenterCase(cIdx);
+        }
+      });
       marker.addTo(layer);
     });
     layer.addTo(map);
     centerLayers[i] = layer;
+  });
+}
+
+function toggleCenterCase(idx) {
+  var c = masterCenters[idx];
+  if (!c) return;
+  if (c.label === c.label.toUpperCase()) {
+    c.label = c.label.toLowerCase();
+  } else {
+    c.label = c.label.toUpperCase();
+  }
+  c.primary = c.label === c.label.toUpperCase();
+  renderCentersOnAllPanels();
+  setStatus("Centro " + c.label + " (" + Math.round(c.value) + " hPa)");
+}
+
+function toggleCenterDeleteMode() {
+  var wasActive = centerDeleteMode;
+  _deactivateAllModes();
+  if (!wasActive) {
+    centerDeleteMode = true;
+    updateModeIndicator();
+    setStatus("Modo borrar centros: click en un A/B para eliminarlo");
+  } else {
+    setStatus("Modo borrar centros desactivado");
+  }
+}
+
+function addCenterAtClick() {
+  if (!maps[0]) return;
+  _deactivateAllModes();
+  setStatus("Click en el mapa para anadir un centro de presion");
+  maps[0].once("click", function(e) {
+    var lat = Math.round(e.latlng.lat * 100) / 100;
+    var lon = Math.round(e.latlng.lng * 100) / 100;
+    var type = prompt("Tipo de centro:\nH = Anticiclon (A)\nL = Borrasca (B)", "L");
+    if (!type || (type !== "H" && type !== "L")) {
+      setStatus("Cancelado");
+      return;
+    }
+    var value = parseFloat(prompt("Presion (hPa):", type === "H" ? "1025" : "1000"));
+    if (isNaN(value)) {
+      setStatus("Cancelado");
+      return;
+    }
+    var label = type === "H" ? "A" : "B";
+    masterCenters.push({
+      id: "manual_" + Date.now(),
+      type: type,
+      lat: lat,
+      lon: lon,
+      value: value,
+      primary: true,
+      name: "",
+      label: label,
+    });
+    renderCentersOnAllPanels();
+    setStatus("Centro " + label + " anadido en " + lat.toFixed(1) + ", " + lon.toFixed(1));
   });
 }
 
@@ -1242,6 +1413,7 @@ async function detectFronts() {
   try {
     var resp = await fetch("/api/fronts/detect");
     var geojson = await resp.json();
+    pushUndo();
     masterFronts = geojson;
     renderFrontsOnAllPanels();
     var n = geojson.features ? geojson.features.length : 0;
@@ -1255,36 +1427,28 @@ async function detectFronts() {
 
 async function saveFronts() {
   try {
-    var resp = await fetch("/api/fronts", {
+    var resp1 = await fetch("/api/fronts", {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(masterFronts),
     });
-    var data = await resp.json();
-    setStatus("Frentes guardados (" + data.n_fronts + ")");
+    var data1 = await resp1.json();
+    // Also save edited centers
+    var resp2 = await fetch("/api/centers", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(masterCenters),
+    });
+    var data2 = await resp2.json();
+    setStatus("Guardado: " + data1.n_fronts + " frentes, " + data2.n_centers + " centros");
   } catch (e) {
     setStatus("Error guardando: " + e.message);
   }
 }
 
-async function generateFromCenter(centerId, value) {
-  showLoading();
-  setStatus("Generando frentes desde " + centerId + " (" + Math.round(value) + " hPa)...");
-  try {
-    var resp = await fetch("/api/fronts/generate/" + centerId, { method: "POST" });
-    var geojson = await resp.json();
-    masterFronts = geojson;
-    renderFrontsOnAllPanels();
-    var n = geojson.features ? geojson.features.length : 0;
-    setStatus(n + " frentes totales");
-  } catch (e) {
-    setStatus("Error generando: " + e.message);
-  } finally {
-    hideLoading();
-  }
-}
 
 function flipAllFronts() {
+  pushUndo();
   (masterFronts.features || []).forEach(function(f) {
     if (f.properties) {
       f.properties.flip = !f.properties.flip;
@@ -1401,6 +1565,8 @@ function selectFrontForEdit(feature) {
     // Prevent map click (deselect) when interacting with vertex markers
     marker.on("mousedown", function(e) { L.DomEvent.stopPropagation(e); });
 
+    marker.on("dragstart", function() { pushUndo(); });
+
     marker.on("drag", function(e) {
       var pos = e.target.getLatLng();
       // Update GeoJSON coordinates
@@ -1426,40 +1592,268 @@ function selectFrontForEdit(feature) {
   setStatus("Editando frente " + ft + " (" + coords.length + " vertices). Arrastra vertices para deformar.");
 }
 
-function toggleEditMode() {
-  editMode = !editMode;
-  var btn = document.getElementById("btn-edit-mode");
-  if (editMode) {
-    // Desactivar delete mode si estaba activo
-    if (deleteMode) {
-      deleteMode = false;
-      document.getElementById("btn-delete-mode").classList.remove("active-mode");
-    }
-    btn.classList.add("active-mode");
-    setStatus("Modo editar activo: click en un frente para seleccionarlo");
+function selectFrontForSplit(feature) {
+  clearEditSelection();
+  selectedFeature = feature;
+  var coords = feature.geometry.coordinates;
+  var latlngs = coords.map(function(c) { return [c[1], c[0]]; });
+
+  // Highlight on all panels
+  maps.forEach(function(map) {
+    if (!map) return;
+    var hl = L.polyline(latlngs, {
+      color: "#ff4444", weight: 5, opacity: 0.6, interactive: false,
+    }).addTo(map);
+    editHighlights.push(hl);
+  });
+
+  // Split markers on panel 0 (not first/last — can't split at endpoints)
+  var map0 = maps[0];
+  if (!map0) return;
+
+  var splitIcon = L.divIcon({
+    className: "split-marker",
+    iconSize: [14, 14],
+    iconAnchor: [7, 7],
+  });
+
+  for (var idx = 1; idx < coords.length - 1; idx++) {
+    (function(splitIdx) {
+      var marker = L.marker([coords[splitIdx][1], coords[splitIdx][0]], {
+        icon: splitIcon,
+        draggable: false,
+        pane: "vertexEdit",
+      }).addTo(map0);
+
+      marker.on("mousedown", function(e) { L.DomEvent.stopPropagation(e); });
+
+      marker.on("click", function(e) {
+        L.DomEvent.stopPropagation(e);
+        splitFrontAtVertex(feature, splitIdx);
+      });
+
+      vertexMarkers.push(marker);
+    })(idx);
+  }
+
+  var ft = feature.properties.front_type || "?";
+  setStatus("Dividir frente " + ft + ": click en un vertice rojo para cortar (" + (coords.length - 2) + " puntos de corte)");
+}
+
+function splitFrontAtVertex(feature, splitIdx) {
+  var coords = feature.geometry.coordinates;
+  if (splitIdx < 1 || splitIdx >= coords.length - 1) return;
+  pushUndo();
+
+  // First half: [0..splitIdx] (inclusive)
+  var coords1 = coords.slice(0, splitIdx + 1);
+  // Second half: [splitIdx..end] (splitIdx is shared)
+  var coords2 = coords.slice(splitIdx);
+
+  // Minimum 2 points per segment
+  if (coords1.length < 2 || coords2.length < 2) {
+    setStatus("No se puede dividir: segmentos demasiado cortos");
+    return;
+  }
+
+  // Update original feature with first half
+  feature.geometry.coordinates = coords1;
+
+  // Create new feature for second half
+  var newFeature = {
+    type: "Feature",
+    properties: {
+      front_type: feature.properties.front_type,
+      id: "split_" + Date.now() + "_" + Math.random().toString(36).substr(2, 4),
+      flip: feature.properties.flip || false,
+      flip_symbols: feature.properties.flip_symbols || false,
+    },
+    geometry: {
+      type: "LineString",
+      coordinates: coords2,
+    },
+  };
+
+  // Insert new feature right after the original
+  var origIdx = masterFronts.features.indexOf(feature);
+  if (origIdx >= 0) {
+    masterFronts.features.splice(origIdx + 1, 0, newFeature);
   } else {
-    btn.classList.remove("active-mode");
+    masterFronts.features.push(newFeature);
+  }
+
+  clearEditSelection();
+  renderFrontsOnAllPanels();
+  setStatus("Frente dividido en vertice " + splitIdx + " → 2 segmentos (" + coords1.length + " + " + coords2.length + " pts)");
+}
+
+function _deactivateAllModes() {
+  if (editMode) {
+    editMode = false;
     clearEditSelection();
+  }
+  if (splitMode) {
+    splitMode = false;
+    clearEditSelection();
+  }
+  if (deleteMode) { deleteMode = false; }
+  if (centerDeleteMode) { centerDeleteMode = false; }
+  if (selectMode) {
+    selectMode = false;
+    selectedFronts.clear();
+    if (selectRectDrawer) { selectRectDrawer.disable(); selectRectDrawer = null; }
+  }
+  updateModeIndicator();
+  updateSelectionUI();
+}
+
+function updateModeIndicator() {
+  var ind = document.getElementById("mode-indicator");
+  var menuBtns = document.querySelectorAll("#edit-menu button");
+  menuBtns.forEach(function(b) { b.classList.remove("menu-active"); });
+
+  if (editMode) {
+    ind.textContent = "Editando";
+    document.getElementById("btn-edit-mode").classList.add("menu-active");
+  } else if (splitMode) {
+    ind.textContent = "Dividir";
+    document.getElementById("btn-split-mode").classList.add("menu-active");
+  } else if (deleteMode) {
+    ind.textContent = "Borrar frente";
+    document.getElementById("btn-delete-mode").classList.add("menu-active");
+  } else if (centerDeleteMode) {
+    ind.textContent = "Borrar centro";
+    document.getElementById("btn-center-delete").classList.add("menu-active");
+  } else if (selectMode) {
+    ind.textContent = "Seleccionar";
+    document.getElementById("btn-select-mode").classList.add("menu-active");
+  } else {
+    ind.textContent = "";
+  }
+}
+
+function toggleEditMode() {
+  var wasActive = editMode;
+  _deactivateAllModes();
+  if (!wasActive) {
+    editMode = true;
+    updateModeIndicator();
+    setStatus("Modo editar: click en un frente para mover vertices");
+  } else {
     setStatus("Modo editar desactivado");
   }
 }
 
-function toggleDeleteMode() {
-  deleteMode = !deleteMode;
-  var btn = document.getElementById("btn-delete-mode");
-  if (deleteMode) {
-    // Desactivar edit mode si estaba activo
-    if (editMode) {
-      editMode = false;
-      clearEditSelection();
-      document.getElementById("btn-edit-mode").classList.remove("active-mode");
-    }
-    btn.classList.add("active-mode");
-    setStatus("Modo borrar activo: click en un frente para eliminarlo");
+function toggleSplitMode() {
+  var wasActive = splitMode;
+  _deactivateAllModes();
+  if (!wasActive) {
+    splitMode = true;
+    updateModeIndicator();
+    setStatus("Modo dividir: click en un frente, luego click en un vertice para cortar");
   } else {
-    btn.classList.remove("active-mode");
+    setStatus("Modo dividir desactivado");
+  }
+}
+
+function toggleDeleteMode() {
+  var wasActive = deleteMode;
+  _deactivateAllModes();
+  if (!wasActive) {
+    deleteMode = true;
+    updateModeIndicator();
+    setStatus("Modo borrar: click en un frente para eliminarlo");
+  } else {
     setStatus("Modo borrar desactivado");
   }
+}
+
+// ==========================================================================
+// Select mode: select fronts, reassign type, delete batch
+// ==========================================================================
+
+function updateSelectionUI() {
+  var n = selectedFronts.size;
+  document.getElementById("sel-count").textContent = n > 0 ? n + " sel." : "";
+}
+
+function toggleSelectMode() {
+  var wasActive = selectMode;
+  _deactivateAllModes();
+  if (!wasActive) {
+    selectMode = true;
+    updateModeIndicator();
+    updateSelectionUI();
+    setStatus("Modo seleccion: click en frentes o usa 'Seleccionar por area'");
+  } else {
+    renderFrontsOnAllPanels();
+    setStatus("Modo seleccion desactivado");
+  }
+}
+
+function startRectangleSelect() {
+  if (!maps[0]) return;
+  if (selectRectDrawer) { selectRectDrawer.disable(); selectRectDrawer = null; }
+  selectRectDrawer = new L.Draw.Rectangle(maps[0], {
+    shapeOptions: { color: "#FFD700", weight: 2, fillOpacity: 0.15 }
+  });
+  selectRectDrawer.enable();
+  setStatus("Dibuja un rectangulo sobre los frentes que quieras seleccionar");
+}
+
+function handleRectangleCreated(e) {
+  if (!selectMode) return;
+  var layer = e.layer;
+  var bounds = layer.getBounds();
+
+  // Find fronts that have at least one coordinate inside the rectangle
+  (masterFronts.features || []).forEach(function(feature, idx) {
+    var coords = feature.geometry && feature.geometry.coordinates;
+    if (!coords) return;
+    for (var j = 0; j < coords.length; j++) {
+      var ll = L.latLng(coords[j][1], coords[j][0]);
+      if (bounds.contains(ll)) {
+        selectedFronts.add(idx);
+        break;
+      }
+    }
+  });
+
+  // Don't add the rectangle to the map permanently
+  if (layer._map) layer._map.removeLayer(layer);
+  selectRectDrawer = null;
+  updateSelectionUI();
+  renderFrontsOnAllPanels();
+  setStatus(selectedFronts.size + " frentes seleccionados");
+}
+
+function assignTypeToSelected() {
+  if (selectedFronts.size === 0) return;
+  pushUndo();
+  var newType = getSelectedFrontType();
+  selectedFronts.forEach(function(idx) {
+    var f = masterFronts.features[idx];
+    if (f && f.properties) {
+      f.properties.front_type = newType;
+    }
+  });
+  renderFrontsOnAllPanels();
+  setStatus(selectedFronts.size + " frentes reasignados a '" + newType + "'");
+}
+
+function deleteSelectedFronts() {
+  if (selectedFronts.size === 0) return;
+  pushUndo();
+  var count = selectedFronts.size;
+  // Delete in reverse index order to avoid shifting
+  var indices = Array.from(selectedFronts).sort(function(a, b) { return b - a; });
+  indices.forEach(function(idx) {
+    masterFronts.features.splice(idx, 1);
+  });
+  selectedFronts.clear();
+  updateSelectionUI();
+  renderFrontsOnAllPanels();
+  setStatus(count + " frentes eliminados");
 }
 
 // ==========================================================================
@@ -1477,6 +1871,7 @@ document.getElementById("btn-export-toggle").addEventListener("click", function(
 });
 document.addEventListener("click", function() {
   document.getElementById("export-menu").classList.remove("open");
+  document.getElementById("edit-menu").classList.remove("open");
 });
 document.getElementById("btn-export").addEventListener("click", function() {
   document.getElementById("export-menu").classList.remove("open");
@@ -1495,15 +1890,81 @@ document.getElementById("precip-check").addEventListener("change", loadPrecipOve
 document.getElementById("wind-850-check").addEventListener("change", loadWindOverlays);
 document.getElementById("wind-700-check").addEventListener("change", loadWindOverlays);
 
-document.getElementById("btn-flip").addEventListener("click", flipAllFronts);
-document.getElementById("btn-edit-mode").addEventListener("click", toggleEditMode);
-document.getElementById("btn-delete-mode").addEventListener("click", toggleDeleteMode);
+// Edit dropdown toggle
+document.getElementById("btn-edit-toggle").addEventListener("click", function(e) {
+  e.stopPropagation();
+  document.getElementById("edit-menu").classList.toggle("open");
+  document.getElementById("export-menu").classList.remove("open");
+});
+// Close edit menu on outside click (handled in existing document click listener below)
 
-// Escape key: deselect front in edit mode
+document.getElementById("btn-edit-mode").addEventListener("click", function() {
+  document.getElementById("edit-menu").classList.remove("open");
+  toggleEditMode();
+});
+document.getElementById("btn-split-mode").addEventListener("click", function() {
+  document.getElementById("edit-menu").classList.remove("open");
+  toggleSplitMode();
+});
+document.getElementById("btn-delete-mode").addEventListener("click", function() {
+  document.getElementById("edit-menu").classList.remove("open");
+  toggleDeleteMode();
+});
+document.getElementById("btn-select-mode").addEventListener("click", function() {
+  document.getElementById("edit-menu").classList.remove("open");
+  toggleSelectMode();
+});
+document.getElementById("btn-select-rect").addEventListener("click", function() {
+  document.getElementById("edit-menu").classList.remove("open");
+  startRectangleSelect();
+});
+document.getElementById("btn-assign-type").addEventListener("click", function() {
+  document.getElementById("edit-menu").classList.remove("open");
+  assignTypeToSelected();
+});
+document.getElementById("btn-delete-selected").addEventListener("click", function() {
+  document.getElementById("edit-menu").classList.remove("open");
+  deleteSelectedFronts();
+});
+document.getElementById("btn-flip").addEventListener("click", function() {
+  document.getElementById("edit-menu").classList.remove("open");
+  flipAllFronts();
+});
+document.getElementById("btn-center-delete").addEventListener("click", function() {
+  document.getElementById("edit-menu").classList.remove("open");
+  toggleCenterDeleteMode();
+});
+document.getElementById("btn-center-add").addEventListener("click", function() {
+  document.getElementById("edit-menu").classList.remove("open");
+  addCenterAtClick();
+});
+document.getElementById("btn-undo").addEventListener("click", function() {
+  document.getElementById("edit-menu").classList.remove("open");
+  undoAction();
+});
+
+// Keyboard shortcuts
 document.addEventListener("keydown", function(e) {
-  if (e.key === "Escape" && editMode && selectedFeature) {
-    clearEditSelection();
-    setStatus("Frente deseleccionado");
+  // Ctrl+Z: undo
+  if ((e.ctrlKey || e.metaKey) && e.key === "z") {
+    e.preventDefault();
+    undoAction();
+    return;
+  }
+  if (e.key === "Escape") {
+    if (selectMode && selectedFronts.size > 0) {
+      selectedFronts.clear();
+      updateSelectionUI();
+      renderFrontsOnAllPanels();
+      setStatus("Seleccion limpiada");
+    } else if ((editMode || splitMode) && selectedFeature) {
+      clearEditSelection();
+      setStatus("Frente deseleccionado");
+    } else if (editMode || splitMode || deleteMode || selectMode) {
+      _deactivateAllModes();
+      renderFrontsOnAllPanels();
+      setStatus("Modo desactivado");
+    }
   }
 });
 

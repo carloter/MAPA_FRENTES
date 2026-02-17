@@ -12,3 +12,4 @@ shapely>=2.0
 geojson>=3.0
 pyyaml>=6.0
 scikit-learn>=1.2
+scikit-image>=0.20

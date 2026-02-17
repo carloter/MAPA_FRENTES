@@ -74,7 +74,7 @@ def main():
         # Buscar cualquier GRIB existente en cache
         cache_dir = Path(cfg.data.cache_dir)
         sfc_candidates = sorted(cache_dir.glob("ecmwf_sfc_*.grib2"), reverse=True)
-        pl_candidates = sorted(cache_dir.glob("ecmwf_pl850_*.grib2"), reverse=True)
+        pl_candidates = sorted(cache_dir.glob("ecmwf_pl_multi_*.grib2"), reverse=True)
         if not sfc_candidates or not pl_candidates:
             logger.error("No se encontraron ficheros GRIB en %s", cache_dir)
             sys.exit(1)

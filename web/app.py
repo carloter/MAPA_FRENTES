@@ -755,6 +755,27 @@ async def get_centers():
     ]
 
 
+@app.put("/api/centers")
+async def save_centers(request: Request):
+    """Guarda centros editados desde el cliente."""
+    from mapa_frentes.analysis.pressure_centers import PressureCenter
+
+    data = await request.json()
+    state.centers = [
+        PressureCenter(
+            type=c.get("type", "L"),
+            lat=float(c.get("lat", 0)),
+            lon=float(c.get("lon", 0)),
+            value=float(c.get("value", 1013)),
+            primary=bool(c.get("primary", True)),
+            name=c.get("name", ""),
+            id=c.get("id", ""),
+        )
+        for c in data
+    ]
+    return {"status": "ok", "n_centers": len(state.centers)}
+
+
 @app.get("/api/fronts/detect")
 async def detect_fronts():
     """Ejecuta deteccion automatica TFP + clasificacion."""
