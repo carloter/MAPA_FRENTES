@@ -216,6 +216,15 @@ class BackgroundFieldConfig:
 
 
 @dataclass
+class PostProcessingConfig:
+    """Pasos opcionales de postprocesado tras deteccion TFP."""
+    associate_centers: bool = True    # Asociar frentes a centros L + filtrar por proximidad
+    create_occlusions: bool = True    # Crear frentes ocluidos uniendo pares frio+calido
+    trim_sharp_turns: bool = True     # Recortar giros bruscos
+    trim_max_turn_deg: float = 90.0   # Angulo maximo antes de recortar
+
+
+@dataclass
 class ExportConfig:
     default_format: str = "png"
     png_dpi: int = 300
@@ -256,6 +265,7 @@ class AppConfig:
     occlusion: OcclusionConfig = field(default_factory=OcclusionConfig)
     background_field: BackgroundFieldConfig = field(default_factory=BackgroundFieldConfig)
     precipitation: PrecipitationConfig = field(default_factory=PrecipitationConfig)
+    post_processing: PostProcessingConfig = field(default_factory=PostProcessingConfig)
     wind_vectors: WindVectorsConfig = field(default_factory=WindVectorsConfig)
 
 
@@ -287,5 +297,6 @@ def load_config(config_path: str | Path | None = None) -> AppConfig:
         occlusion=OcclusionConfig(**raw.get("occlusion", {})),
         background_field=BackgroundFieldConfig(**raw.get("background_field", {})),
         precipitation=PrecipitationConfig(**raw.get("precipitation", {})),
+        post_processing=PostProcessingConfig(**raw.get("post_processing", {})),
         wind_vectors=WindVectorsConfig(**raw.get("wind_vectors", {})),
     )

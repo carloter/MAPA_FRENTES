@@ -189,6 +189,20 @@
   </select>
   <button id="btn-load" class="primary">Cargar datos</button>
   <button id="btn-detect" disabled>Detectar frentes</button>
+  <div class="export-dropdown">
+    <button class="export-dropdown-btn" id="btn-options-toggle" disabled>Opciones &#9662;</button>
+    <div class="export-dropdown-menu" id="options-menu">
+      <label style="display:block;padding:6px 14px;color:#e0e0e0;font-size:12px;cursor:pointer;white-space:nowrap;">
+        <input type="checkbox" id="opt-associate" checked> Asociar a centros
+      </label>
+      <label style="display:block;padding:6px 14px;color:#e0e0e0;font-size:12px;cursor:pointer;white-space:nowrap;">
+        <input type="checkbox" id="opt-create-occl" checked> Crear ocluidos
+      </label>
+      <label style="display:block;padding:6px 14px;color:#e0e0e0;font-size:12px;cursor:pointer;white-space:nowrap;">
+        <input type="checkbox" id="opt-trim" checked> Recortar giros
+      </label>
+    </div>
+  </div>
 
   <div class="tb-sep"></div>
   <label>Tipo frente:</label>
@@ -539,6 +553,7 @@ function setButtonsEnabled(loaded) {
   document.getElementById("btn-export-toggle").disabled = !loaded;
   document.getElementById("btn-flip").disabled = !loaded;
   document.getElementById("btn-edit-toggle").disabled = !loaded;
+  document.getElementById("btn-options-toggle").disabled = !loaded;
 }
 
 function getSelectedFrontType() {
@@ -1937,10 +1952,13 @@ document.getElementById("btn-export-toggle").addEventListener("click", function(
   e.stopPropagation();
   var menu = document.getElementById("export-menu");
   menu.classList.toggle("open");
+  document.getElementById("options-menu").classList.remove("open");
+  document.getElementById("edit-menu").classList.remove("open");
 });
 document.addEventListener("click", function() {
   document.getElementById("export-menu").classList.remove("open");
   document.getElementById("edit-menu").classList.remove("open");
+  document.getElementById("options-menu").classList.remove("open");
 });
 document.getElementById("btn-export").addEventListener("click", function() {
   document.getElementById("export-menu").classList.remove("open");
@@ -1959,11 +1977,41 @@ document.getElementById("precip-check").addEventListener("change", loadPrecipOve
 document.getElementById("wind-850-check").addEventListener("change", loadWindOverlays);
 document.getElementById("wind-700-check").addEventListener("change", loadWindOverlays);
 
+// Options dropdown toggle
+document.getElementById("btn-options-toggle").addEventListener("click", function(e) {
+  e.stopPropagation();
+  document.getElementById("options-menu").classList.toggle("open");
+  document.getElementById("export-menu").classList.remove("open");
+  document.getElementById("edit-menu").classList.remove("open");
+});
+// Sync checkboxes → server on change
+["opt-associate", "opt-create-occl", "opt-trim"].forEach(function(id) {
+  document.getElementById(id).addEventListener("change", function() {
+    var payload = {
+      associate_centers: document.getElementById("opt-associate").checked,
+      create_occlusions: document.getElementById("opt-create-occl").checked,
+      trim_sharp_turns: document.getElementById("opt-trim").checked
+    };
+    fetch("/api/config/post_processing", {
+      method: "PUT",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify(payload)
+    });
+  });
+});
+// Load server state on page load
+fetch("/api/config/post_processing").then(function(r){return r.json();}).then(function(d){
+  document.getElementById("opt-associate").checked = !!d.associate_centers;
+  document.getElementById("opt-create-occl").checked = !!d.create_occlusions;
+  document.getElementById("opt-trim").checked = !!d.trim_sharp_turns;
+}).catch(function(){});
+
 // Edit dropdown toggle
 document.getElementById("btn-edit-toggle").addEventListener("click", function(e) {
   e.stopPropagation();
   document.getElementById("edit-menu").classList.toggle("open");
   document.getElementById("export-menu").classList.remove("open");
+  document.getElementById("options-menu").classList.remove("open");
 });
 // Close edit menu on outside click (handled in existing document click listener below)
 

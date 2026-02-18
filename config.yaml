@@ -191,6 +191,12 @@ wind_vectors:
   web_scale_factor: 0.1  # multiplicador de scale para web (mayor = flechas mas cortas en web)
   web_width_factor: 0.6  # multiplicador de width para web (menor = mas finas en web)
 
+post_processing:
+  associate_centers: true      # Asociar frentes a centros L y filtrar por proximidad
+  create_occlusions: true      # Crear frentes ocluidos uniendo pares frio+calido
+  trim_sharp_turns: true       # Recortar giros bruscos
+  trim_max_turn_deg: 90.0      # Angulo maximo antes de recortar
+
 occlusion:
   enabled: true
   min_score: 0.60

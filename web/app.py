@@ -843,6 +843,30 @@ async def save_centers(request: Request):
     return {"status": "ok", "n_centers": len(state.centers)}
 
 
+@app.get("/api/config/post_processing")
+async def get_post_processing():
+    """Devuelve opciones de postprocesado."""
+    pp = state.cfg.post_processing
+    return {
+        "associate_centers": pp.associate_centers,
+        "create_occlusions": pp.create_occlusions,
+        "trim_sharp_turns": pp.trim_sharp_turns,
+        "trim_max_turn_deg": pp.trim_max_turn_deg,
+    }
+
+
+@app.put("/api/config/post_processing")
+async def set_post_processing(request: Request):
+    """Actualiza opciones de postprocesado."""
+    data = await request.json()
+    pp = state.cfg.post_processing
+    for key, val in data.items():
+        if hasattr(pp, key):
+            expected_type = type(getattr(pp, key))
+            setattr(pp, key, expected_type(val))
+    return {"status": "ok"}
+
+
 @app.get("/api/fronts/detect")
 async def detect_fronts():
     """Ejecuta deteccion automatica TFP + clasificacion."""
@@ -859,8 +883,10 @@ async def detect_fronts():
     )
 
     collection = compute_tfp_fronts(state.ds, state.cfg)
+    pp = state.cfg.post_processing
+
     # Asociar a centros ANTES de clasificar (el clasificador necesita los centros)
-    if state.centers:
+    if pp.associate_centers and state.centers:
         collection = associate_fronts_to_centers(
             collection, state.centers, state.cfg,
         )
@@ -868,14 +894,18 @@ async def detect_fronts():
         collection = filter_fronts_near_lows(
             collection, state.centers, state.cfg,
         )
+
     collection = classify_fronts(collection, state.ds, state.cfg, centers=state.centers)
+
     # Crear ocluidos uniendo pares frio+calido en cada centro
-    if state.centers:
+    if pp.create_occlusions and state.centers:
         collection = create_occlusion_from_pair(
             collection, state.centers, state.cfg,
         )
-    # Recortar giros bruscos (> 90°) y quedarse con el tramo mas largo
-    collection = trim_sharp_turns(collection, max_turn_deg=90.0)
+
+    # Recortar giros bruscos y quedarse con el tramo mas largo
+    if pp.trim_sharp_turns:
+        collection = trim_sharp_turns(collection, max_turn_deg=pp.trim_max_turn_deg)
     state.fronts = collection
     return collection_to_geojson(collection)
 
