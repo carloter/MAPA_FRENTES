@@ -130,7 +130,7 @@ def _render_field_png(
     derived: DerivedField,
     lats: np.ndarray,
     lons: np.ndarray,
-    width_px: int = 900,
+    width_px: int = 1400,
     vmin: float | None = None,
     vmax: float | None = None,
 ) -> bytes:
@@ -146,22 +146,25 @@ def _render_field_png(
     # Convertir lats a espacio Mercator y crear grid uniforme
     merc_y = _lat_to_mercator_y(lats)
     merc_y_min, merc_y_max = float(merc_y.min()), float(merc_y.max())
-    n_merc = len(lats)
+    # Duplicar resolucion para suavizar contourf
+    n_merc = len(lats) * 2
     merc_y_uniform = np.linspace(merc_y_min, merc_y_max, n_merc)
 
     # Latitudes correspondientes al grid Mercator uniforme
     lats_merc = np.rad2deg(2 * np.arctan(np.exp(merc_y_uniform)) - np.pi / 2)
 
-    # Interpolar datos al grid Mercator
-    # lats del dataset pueden estar en orden descendente
+    # Interpolar datos al grid Mercator (tambien doblar resolucion en lon)
     lat_sorted = lats if lats[0] < lats[-1] else lats[::-1]
     data_sorted = derived.data if lats[0] < lats[-1] else derived.data[::-1, :]
+
+    n_lon_merc = len(lons) * 2
+    lons_merc = np.linspace(float(lons.min()), float(lons.max()), n_lon_merc)
 
     interp = RegularGridInterpolator(
         (lat_sorted, lons), data_sorted,
         method="linear", bounds_error=False, fill_value=np.nan,
     )
-    lon2d_merc, lat2d_merc = np.meshgrid(lons, lats_merc)
+    lon2d_merc, lat2d_merc = np.meshgrid(lons_merc, lats_merc)
     data_merc = interp((lat2d_merc, lon2d_merc))
 
     # Calcular aspect ratio en espacio Mercator
@@ -176,7 +179,7 @@ def _render_field_png(
     ax = fig.add_axes([0, 0, 1, 1])
     ax.set_axis_off()
 
-    num_levels = 20
+    num_levels = 30
     if vmin is None:
         vmin = float(np.nanmin(derived.data))
     if vmax is None:
@@ -191,11 +194,11 @@ def _render_field_png(
         norm = None
 
     # Plotear en espacio Mercator (eje y = merc_y_uniform)
-    lon2d_plot, merc2d_plot = np.meshgrid(lons, merc_y_uniform)
+    lon2d_plot, merc2d_plot = np.meshgrid(lons_merc, merc_y_uniform)
     ax.contourf(
         lon2d_plot, merc2d_plot, data_merc,
         levels=levels, cmap=derived.cmap, norm=norm,
-        alpha=0.7, extend="both",
+        alpha=0.7, extend="both", antialiased=True,
     )
     ax.set_xlim(float(lons.min()), float(lons.max()))
     ax.set_ylim(merc_y_min, merc_y_max)
@@ -314,17 +317,26 @@ async def load_data(request: Request):
     state.isobar_geojson = None
     state.fronts = FrontCollection()
 
-    # Info de tiempo
+    # Info de tiempo: valid_time = base_time + step
     state.date_info = ""
+    base_time = None
     for coord_name in ("time", "valid_time"):
         if coord_name in state.ds.coords:
-            state.date_info = str(state.ds.coords[coord_name].values)[:16]
+            val = state.ds.coords[coord_name].values
+            base_time = np.datetime64(val, "ns") if not isinstance(val, np.datetime64) else val
             break
+    if base_time is not None:
+        valid_time = base_time + np.timedelta64(int(step), "h")
+        state.date_info = str(valid_time)[:16]
+        state.step_hours = int(step)
+    else:
+        state.step_hours = 0
 
     return {
         "status": "ok",
         "n_centers": len(state.centers),
         "date_info": state.date_info,
+        "step": int(step),
     }
 
 
@@ -445,26 +457,37 @@ def _render_precipitation_png(
         return b""
 
     pcfg = cfg.precipitation
-    vmax = float(np.nanmax(precip_mm))
-    logger.info("Precipitacion render: max=%.2f mm, umbral=%.2f mm", vmax, pcfg.threshold_mm)
-    if vmax <= pcfg.threshold_mm:
+    raw_max = float(np.nanmax(precip_mm))
+    logger.info("Precipitacion render: max=%.2f mm, umbral=%.2f mm", raw_max, pcfg.threshold_mm)
+    if raw_max <= pcfg.threshold_mm:
         return b""
 
-    # Re-interpolar a espacio Mercator
+    # Escala con percentiles p5-p95 para más contraste
+    valid = precip_mm[precip_mm > pcfg.threshold_mm]
+    if len(valid) > 0:
+        vmax = float(np.percentile(valid, 95))
+        vmax = max(vmax, pcfg.threshold_mm + 0.5)  # mínimo rango
+    else:
+        vmax = raw_max
+
+    # Re-interpolar a espacio Mercator (doble resolucion para suavizar)
     merc_y = _lat_to_mercator_y(lats)
     merc_y_min, merc_y_max = float(merc_y.min()), float(merc_y.max())
-    n_merc = len(lats)
+    n_merc = len(lats) * 2
     merc_y_uniform = np.linspace(merc_y_min, merc_y_max, n_merc)
     lats_merc = np.rad2deg(2 * np.arctan(np.exp(merc_y_uniform)) - np.pi / 2)
 
     lat_sorted = lats if lats[0] < lats[-1] else lats[::-1]
     data_sorted = precip_mm if lats[0] < lats[-1] else precip_mm[::-1, :]
 
+    n_lon_merc = len(lons) * 2
+    lons_merc = np.linspace(float(lons.min()), float(lons.max()), n_lon_merc)
+
     interp = RegularGridInterpolator(
         (lat_sorted, lons), data_sorted,
         method="linear", bounds_error=False, fill_value=0,
     )
-    lon2d_merc, lat2d_merc = np.meshgrid(lons, lats_merc)
+    lon2d_merc, lat2d_merc = np.meshgrid(lons_merc, lats_merc)
     data_merc = interp((lat2d_merc, lon2d_merc))
 
     # Figure
@@ -478,12 +501,12 @@ def _render_precipitation_png(
     ax = fig.add_axes([0, 0, 1, 1])
     ax.set_axis_off()
 
-    levels = np.linspace(pcfg.threshold_mm, vmax, pcfg.num_levels)
-    lon2d_plot, merc2d_plot = np.meshgrid(lons, merc_y_uniform)
+    levels = np.linspace(pcfg.threshold_mm, vmax, max(pcfg.num_levels, 30))
+    lon2d_plot, merc2d_plot = np.meshgrid(lons_merc, merc_y_uniform)
     ax.contourf(
         lon2d_plot, merc2d_plot, data_merc,
         levels=levels, cmap=pcfg.cmap,
-        alpha=pcfg.alpha, extend="max",
+        alpha=pcfg.alpha, extend="max", antialiased=True,
     )
     ax.set_xlim(float(lons.min()), float(lons.max()))
     ax.set_ylim(merc_y_min, merc_y_max)
@@ -628,6 +651,50 @@ async def get_precipitation_status():
     if tp_mm <= state.cfg.precipitation.threshold_mm:
         return {"available": False, "reason": f"Precipitacion maxima = {tp_mm:.1f} mm (bajo umbral {state.cfg.precipitation.threshold_mm} mm). Use step mayor."}
     return {"available": True, "tp_max_mm": round(tp_mm, 2)}
+
+
+@app.get("/api/precipitation/colorbar")
+async def get_precipitation_colorbar(
+    south: float | None = Query(None),
+    north: float | None = Query(None),
+    west: float | None = Query(None),
+    east: float | None = Query(None),
+):
+    """Devuelve metadata de la escala de precipitacion: vmin, vmax, cmap, etc."""
+    if state.ds is None or "tp" not in state.ds:
+        raise HTTPException(400, "No hay datos de precipitacion")
+
+    from mapa_frentes.analysis.derived_fields import compute_precipitation
+    precip_mm = compute_precipitation(state.ds)
+    if precip_mm is None:
+        raise HTTPException(400, "No se pudo calcular precipitacion")
+
+    pcfg = state.cfg.precipitation
+
+    # Recortar al viewport si se dan limites
+    if south is not None and north is not None and west is not None and east is not None:
+        lat_mask = (state.lats >= south) & (state.lats <= north)
+        lon_mask = (state.lons >= west) & (state.lons <= east)
+        if np.any(lat_mask) and np.any(lon_mask):
+            precip_mm = precip_mm[np.ix_(lat_mask, lon_mask)]
+
+    valid = precip_mm[precip_mm > pcfg.threshold_mm]
+    if len(valid) > 0:
+        vmax = float(np.percentile(valid, 95))
+        vmax = max(vmax, pcfg.threshold_mm + 0.5)
+    else:
+        vmax = float(np.nanmax(precip_mm))
+
+    step_h = getattr(state, "step_hours", 0)
+    label = f"Precip. acum. {step_h}h" if step_h > 0 else "Precipitacion"
+
+    return {
+        "vmin": round(float(pcfg.threshold_mm), 2),
+        "vmax": round(vmax, 2),
+        "label": label,
+        "units": "mm",
+        "cmap": pcfg.cmap,
+    }
 
 
 @app.get("/api/precipitation/image")
@@ -787,6 +854,8 @@ async def detect_fronts():
     from mapa_frentes.fronts.association import (
         associate_fronts_to_centers,
         filter_fronts_near_lows,
+        create_occlusion_from_pair,
+        trim_sharp_turns,
     )
 
     collection = compute_tfp_fronts(state.ds, state.cfg)
@@ -800,6 +869,13 @@ async def detect_fronts():
             collection, state.centers, state.cfg,
         )
     collection = classify_fronts(collection, state.ds, state.cfg, centers=state.centers)
+    # Crear ocluidos uniendo pares frio+calido en cada centro
+    if state.centers:
+        collection = create_occlusion_from_pair(
+            collection, state.centers, state.cfg,
+        )
+    # Recortar giros bruscos (> 90°) y quedarse con el tramo mas largo
+    collection = trim_sharp_turns(collection, max_turn_deg=90.0)
     state.fronts = collection
     return collection_to_geojson(collection)
 

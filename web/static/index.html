@@ -90,6 +90,22 @@
       font-size: 9px; font-weight: 600; white-space: nowrap;
       overflow: hidden; text-overflow: ellipsis;
     }
+    .precip-legend {
+      position: absolute; bottom: 8px; right: 8px; z-index: 800;
+      background: rgba(0,0,0,0.72); border-radius: 4px; padding: 4px 6px;
+      font-size: 9px; color: #eee; pointer-events: none;
+      max-width: 140px; line-height: 1.3;
+    }
+    .precip-legend .cl-bar {
+      width: 100%; height: 8px; border-radius: 2px; margin: 2px 0;
+    }
+    .precip-legend .cl-labels {
+      display: flex; justify-content: space-between; font-size: 8px;
+    }
+    .precip-legend .cl-title {
+      font-size: 9px; font-weight: 600; white-space: nowrap;
+      overflow: hidden; text-overflow: ellipsis;
+    }
 
     /* Split vertex marker: scissors icon */
     .split-marker {
@@ -225,6 +241,7 @@
   <span id="sel-count" style="color:#FFD700;font-size:11px;"></span>
   <span id="mode-indicator" style="font-size:11px;color:#e74c3c;"></span>
   <div class="spacer"></div>
+  <span id="date-display" style="color:#FFD700;font-size:13px;font-weight:bold;padding:0 12px;white-space:nowrap;"></span>
   <span id="status">Listo</span>
 </div>
 
@@ -747,14 +764,21 @@ function _createPanel(idx, mosaic, fieldKeys, fieldLabels) {
   map.on("moveend", function() { syncMaps(idx); });
 
   // Re-render fronts on zoom (symbol sizes depend on zoom)
-  // and refresh field images to rescale colors to viewport
+  // and refresh field images/legends to rescale colors to viewport
   var _zoomRenderTimeout = null;
   map.on("zoomend", function() {
     if (_zoomRenderTimeout) clearTimeout(_zoomRenderTimeout);
     _zoomRenderTimeout = setTimeout(function() {
       renderFrontsOnAllPanels();
-      if (dataLoaded) refreshFieldsForViewport();
     }, 300);
+  });
+  // Reescalar leyendas (campo + precipitacion) al hacer zoom o pan
+  var _viewportRefreshTimeout = null;
+  map.on("moveend", function() {
+    if (_viewportRefreshTimeout) clearTimeout(_viewportRefreshTimeout);
+    _viewportRefreshTimeout = setTimeout(function() {
+      if (dataLoaded) refreshFieldsForViewport();
+    }, 500);
   });
 
   // Click on map background: deselect in any mode
@@ -968,10 +992,12 @@ async function loadSingleFieldImage(idx, fieldName) {
 
 async function loadPrecipOverlay() {
   if (!dataLoaded || !dataBounds) return;
-  // Remove existing
+  // Remove existing overlays and legends
   for (var i = 0; i < maps.length; i++) {
     if (precipOverlays[i]) { maps[i].removeLayer(precipOverlays[i]); precipOverlays[i] = null; }
   }
+  _removePrecipLegends();
+
   if (!document.getElementById("precip-check").checked) return;
 
   // Verificar si hay datos de precipitacion
@@ -994,7 +1020,37 @@ async function loadPrecipOverlay() {
     overlay.addTo(maps[i]);
     precipOverlays[i] = overlay;
   }
+
+  // Fetch precipitation colorbar info (uses viewport)
+  try {
+    var vp = maps.length > 0 ? _getViewportParams(maps[0]) : "";
+    var cbResp = await fetch("/api/precipitation/colorbar?" + vp);
+    if (cbResp.ok) {
+      var cbInfo = await cbResp.json();
+      _updatePrecipLegends(cbInfo);
+    }
+  } catch (e) { /* ignore */ }
+
   setStatus("Precipitacion activada");
+}
+
+function _updatePrecipLegends(info) {
+  _removePrecipLegends();
+  var panels = document.querySelectorAll(".panel");
+  for (var i = 0; i < panels.length; i++) {
+    var div = document.createElement("div");
+    div.className = "precip-legend";
+    div.innerHTML =
+      '<div class="cl-title">' + info.label + ' (' + info.units + ')</div>' +
+      '<div class="cl-bar" style="background:' + _cmapToCSS(info.cmap) + '"></div>' +
+      '<div class="cl-labels"><span>' + _formatValue(info.vmin) + '</span><span>' + _formatValue(info.vmax) + '</span></div>';
+    panels[i].appendChild(div);
+  }
+}
+
+function _removePrecipLegends() {
+  var existing = document.querySelectorAll(".precip-legend");
+  existing.forEach(function(el) { el.remove(); });
 }
 
 // --- Wind arrows canvas layer ---
@@ -1211,7 +1267,9 @@ async function loadData() {
     renderFrontsOnAllPanels();
 
     var dateInfo = boundsData.date_info || "";
-    setStatus("Datos cargados: " + data.n_centers + " centros. " + dateInfo);
+    var dateText = dateInfo ? dateInfo.replace("T", " ") + " UTC" : "";
+    document.getElementById("date-display").textContent = dateText;
+    setStatus("Datos cargados: " + data.n_centers + " centros.");
   } catch (e) {
     setStatus("Error: " + e.message);
     console.error(e);
@@ -1264,8 +1322,19 @@ async function loadFieldImages() {
 var _refreshFieldsTimeout = null;
 function refreshFieldsForViewport() {
   if (_refreshFieldsTimeout) clearTimeout(_refreshFieldsTimeout);
-  _refreshFieldsTimeout = setTimeout(function() {
+  _refreshFieldsTimeout = setTimeout(async function() {
     loadFieldImages();
+    // Reescalar leyenda de precipitacion si esta activa
+    if (precipOverlays.some(function(o) { return o !== null; })) {
+      try {
+        var vp = maps.length > 0 ? _getViewportParams(maps[0]) : "";
+        var cbResp = await fetch("/api/precipitation/colorbar?" + vp);
+        if (cbResp.ok) {
+          var cbInfo = await cbResp.json();
+          _updatePrecipLegends(cbInfo);
+        }
+      } catch (e) { /* ignore */ }
+    }
   }, 400);
 }
 

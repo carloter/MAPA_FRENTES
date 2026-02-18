@@ -687,6 +687,7 @@ def compute_tfp_fronts(ds: xr.Dataset, cfg: AppConfig) -> FrontCollection:
         "tfl": tfl,
         "tfp": tfp,
         "abz": abz,
+        "grad_mag": grad_mag,
         "gmag_x": gmag_x,
         "gmag_y": gmag_y,
     }

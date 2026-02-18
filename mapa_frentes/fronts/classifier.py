@@ -23,8 +23,8 @@ from mapa_frentes.fronts.models import Front, FrontCollection, FrontType
 logger = logging.getLogger(__name__)
 
 # Umbrales Hewson/Berry
-K3_FRONT_SPEED = 1.5             # m/s: umbral cold/warm vs stationary (Berry et al. 2011)
-PROXIMITY_OCCLUDED_DEG = 2.5     # grados: distancia al centro para marcar ocluido
+K3_FRONT_SPEED = 0.5             # m/s: umbral cold/warm vs stationary (reducido vs Berry 1.5)
+PROXIMITY_OCCLUDED_DEG = 1.0     # grados: solo muy cerca del centro = ocluido
 
 
 def classify_fronts(
@@ -87,16 +87,8 @@ def classify_fronts(
             (lats, lons), v850, bounds_error=False, fill_value=0,
         )
 
-        # 1. Clasificar cada frente
-        for front in collection.fronts:
-            if front.front_type == FrontType.INSTABILITY_LINE:
-                continue
-            speeds = _compute_hewson_front_speed(
-                front, interp_gmx, interp_gmy, interp_u, interp_v,
-            )
-            front.front_type = _classify_from_speed(speeds)
-
-        # 2. Segmentar frentes mixtos cerca de centros L
+        # 1. PRIMERO segmentar frentes mixtos cerca de centros L
+        #    (un contorno puede envolver la borrasca: parte fria + parte calida)
         if low_centers:
             new_fronts = []
             to_remove = []
@@ -122,6 +114,19 @@ def classify_fronts(
                 collection.remove(fid)
             for nf in new_fronts:
                 collection.add(nf)
+
+        # 2. DESPUES clasificar cada frente/segmento por su speed medio
+        for front in collection.fronts:
+            if front.front_type == FrontType.INSTABILITY_LINE:
+                continue
+            speeds = _compute_hewson_front_speed(
+                front, interp_gmx, interp_gmy, interp_u, interp_v,
+            )
+            front.front_type = _classify_from_speed(speeds)
+            logger.debug(
+                "Frente %s: speed medio=%.2f m/s → %s",
+                front.id[:8], np.mean(speeds), front.front_type.value,
+            )
     else:
         logger.warning(
             "No hay campos gmag_x/gmag_y en metadata. "
@@ -396,8 +401,14 @@ def _apply_robust_occlusion_detection(
     occl_cfg = cfg.occlusion
 
     for front in collection.fronts:
+        # Solo considerar candidatos a oclusion frentes que NO fueron
+        # clasificados como COLD o WARM por Hewson (respetar esa clasificacion)
+        if front.front_type in (FrontType.COLD, FrontType.WARM):
+            continue
+
         is_candidate = (
             front.front_type == FrontType.OCCLUDED
+            or front.front_type == FrontType.STATIONARY
             or front.id in geometric_candidates
         )
 
